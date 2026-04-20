@@ -2,6 +2,11 @@ import prisma from "../config/db.js"
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 
+
+// Get IP 
+const getIP = (req) => {
+  return req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+};
 // SIGNUP
 export const signup = async (req, res) => {
   try {
@@ -41,6 +46,7 @@ export const signup = async (req, res) => {
 
 
 // LOGIN
+
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body
@@ -56,6 +62,9 @@ export const login = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: "User not found" })
     }
+
+
+
 
     const match = await bcrypt.compare(password, user.password)
 
@@ -73,6 +82,14 @@ export const login = async (req, res) => {
       { expiresIn: "1d" }
     )
 
+    const ip = getIP(req);
+
+    req.session.user = {
+      id: user.id,
+      email: user.email,
+      ip: ip
+    };
+
     res.json({
       message: "Login success",
       token
@@ -83,3 +100,16 @@ export const login = async (req, res) => {
     res.status(500).json({ message: "Internal server error" })
   }
 }
+export const logout = (req, res) => {
+  req.session.destroy(() => {
+    res.json({ message: "Logout success" });
+  });
+};
+
+export const getMe = (req, res) => {
+  if (req.session.user) {
+    res.json(req.session.user);
+  } else {
+    res.status(401).json({ message: "Not logged in" });
+  }
+};

@@ -1,6 +1,7 @@
 import express from "express"
 import dotenv from "dotenv"
 import userRoutes from "./user/user.routes.js"
+import app from "./app.js";
 
 dotenv.config()
 
@@ -10,6 +11,6 @@ app.use(express.json())
 
 app.use("/user", userRoutes)
 
-app.listen(5000, () => {
-  console.log("Server running on 5000")
+app.listen(8080, () => {
+  console.log("Server running on 8080")
 })
