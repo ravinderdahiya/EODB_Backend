@@ -11,12 +11,13 @@ export const sendOtp = async (req, res) => {
       return res.status(400).json({ message: "Phone required" });
     }
 
-    const otp = otpGenerator.generate(6, {
+   /* const otp = otpGenerator.generate(6, {
       digits: true,
       alphabets: false,
       upperCase: false,
       specialChars: false,
-    });
+    });*/
+    const otp = Math.floor(100000 + Math.random() * 900000); // 6 digit number
 
     await prisma.otp.create({
       data: {
