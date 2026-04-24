@@ -8,14 +8,46 @@ datasource db {
 }
  
 model User {
-  id        Int      @id @default(autoincrement())
+  id        Int       @id @default(autoincrement())
   fullname  String
-  email     String   @unique
+  email     String    @unique
   password  String
-  mobile    String
-  role      String   @default("user")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  mobile    String    @unique
+  role      String    @default("user")
+  lastLoginIp      String?
+  lastLoginLat     Float?
+  lastLoginLng     Float?
+  lastLoginAt      DateTime?
+  loginAttempts    Int       @default(0)
+  isLocked         Boolean   @default(false)
+  lockedUntil      DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  // Relationship to login sessions
+  sessions         LoginSession[]
+}
+
+model LoginSession {
+  id        String    @id @default(cuid())
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // IP & Location tracking
+  ipAddress String
+  latitude  Float?
+  longitude Float?
+  country   String?
+  city      String?
+  userAgent String?
+  
+  // Session info
+  status    String    @default("active") // active, expired, revoked
+  loginAt   DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  
+  @@map("login_sessions")
 }
 
 model Otp {
