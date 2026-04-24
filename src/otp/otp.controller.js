@@ -17,7 +17,7 @@ export const sendOtp = async (req, res) => {
       upperCase: false,
       specialChars: false,
     });*/
-    const otp = Math.floor(100000 + Math.random() * 900000); // 6 digit number
+   const otp = Math.floor(1000 + Math.random() * 9000); // 4 digit
 
     await prisma.otp.create({
       data: {
