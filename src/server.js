@@ -7,7 +7,7 @@ dotenv.config();
 app.get("/", (req, res) => {
   res.send("API working ✅");
 });
-const PORT = 5000;
+const PORT = 8080;
 
 app.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);

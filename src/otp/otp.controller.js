@@ -7,7 +7,7 @@ import { recordLoginAttempt, createLoginSession } from "../middleware/security.m
 
 dotenv.config();
 
-// ✅ Helper function to normalize phone number
+// âœ… Helper function to normalize phone number
 const normalizePhone = (phone) => {
   if (!phone) return null;
   // Remove all non-digit characters
@@ -27,23 +27,30 @@ const normalizePhone = (phone) => {
   return phone; // Return as is if can't normalize
 };
 
+// Pixabits expects numeric phone format (no + sign)
+const formatSmsPhone = (normalizedPhone) => {
+  const digits = String(normalizedPhone || '').replace(/\D/g, '');
+  if (digits.length === 10) return digits;
+  if (digits.length === 12 && digits.startsWith('91')) return digits;
+  return digits;
+};
 // ===================== SEND OTP WITH SMS =====================
 export const sendOtp = async (req, res) => {
   try {
     let { phone, mobile } = req.body;
     
-    // ✅ Accept both 'phone' and 'mobile' field names
+    // âœ… Accept both 'phone' and 'mobile' field names
     phone = phone || mobile;
 
-    console.log("📱 Send OTP Request - Raw phone:", phone);
+    console.log("ðŸ“± Send OTP Request - Raw phone:", phone);
 
     if (!phone) {
       return res.status(400).json({ message: "Phone required" });
     }
 
-    // ✅ Normalize phone number
+    // âœ… Normalize phone number
     phone = normalizePhone(phone);
-    console.log("📱 Send OTP Request - Normalized phone:", phone);
+    console.log("ðŸ“± Send OTP Request - Normalized phone:", phone);
 
     if (!phone) {
       return res.status(400).json({ message: "Invalid phone format" });
@@ -57,7 +64,7 @@ export const sendOtp = async (req, res) => {
     });*/
    const otp = Math.floor(1000 + Math.random() * 9000); // 4 digit
 
-    // ✅ Delete existing OTP for this phone (if any)
+    // âœ… Delete existing OTP for this phone (if any)
     await prisma.otp.deleteMany({
       where: { phone }
     });
@@ -70,21 +77,21 @@ export const sendOtp = async (req, res) => {
       },
     });
 
-    console.log("✅ OTP Created:", { phone, otp, expiresAt: new Date(Date.now() + 5 * 60 * 1000) });
+    console.log("âœ… OTP Created:", { phone, otp, expiresAt: new Date(Date.now() + 5 * 60 * 1000) });
 
     // ===================== SEND SMS VIA PIXABITS API =====================
     try {
-      const message = `Your One Time Password is ${otp} for your EODB application. Don't share OTP with anyone. EODB`;
+      const message = `Your One Time Password is ${otp} for your application. Don't share OTP with anyone.HARSAC`;
       
       const smsResponse = await axios.post(
         "https://sms.pixabits.in/smsapi/sms/custom/send",
         {
           "key": process.env.SMS_API_KEY || "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI2OTc4ODkzZGE1OTFkNjVmNDZiMzQxYmM6Njk3ODg5M2RhNTkxZDY1ZjQ2YjM0MWJlOkhBUlNBQzo2NTJmYTQ0ZWYzMTc3NjdlOTdkYTMyNmYiLCJpYXQiOjE3Njk1MTA1NTV9.lqYYXdcDUada9lKBa07uJT2hNZzpWjr8D3QmTZzGP6M",
           "text": message,
-          "senderId": process.env.SMS_SENDER_ID || "EODB",
+          "senderId": process.env.SMS_SENDER_ID || "HARSAC",
           "tempDltId": process.env.SMS_TEMP_DLT_ID || "1407169838783023275",
           "route": "Domestic",
-          "phoneno": phone,
+          "phoneno": formatSmsPhone(phone),
           "groupIds": [" "],
           "trans": 1,
           "unicode": 0,
@@ -93,7 +100,7 @@ export const sendOtp = async (req, res) => {
         }
       );
 
-      console.log("📨 SMS API Response:", { status: smsResponse.status, data: smsResponse.data });
+      console.log("ðŸ“¨ SMS API Response:", { status: smsResponse.status, data: smsResponse.data });
       
       res.json({ 
         message: "OTP sent successfully",
@@ -103,7 +110,7 @@ export const sendOtp = async (req, res) => {
         expiresIn: "5 minutes"
       });
     } catch (smsError) {
-      console.error("❌ SMS API Error:", smsError.message);
+      console.error("âŒ SMS API Error:", smsError.message, smsError.response?.data || smsError.response || "No response body");
       // Still return success if SMS fails, OTP is saved in DB
       res.json({ 
         message: "OTP created successfully (SMS delivery pending)",
@@ -116,7 +123,7 @@ export const sendOtp = async (req, res) => {
     }
 
   } catch (error) {
-    console.error("❌ Send OTP Error:", error.message);
+    console.error("âŒ Send OTP Error:", error.message);
     console.error("Error Stack:", error.stack);
     res.status(500).json({ 
       message: "Server error",
@@ -125,43 +132,43 @@ export const sendOtp = async (req, res) => {
     });
   }
 };
-// ✅ VERIFY OTP + LOGIN (JWT)
+// âœ… VERIFY OTP + LOGIN (JWT)
 export const verifyOtp = async (req, res) => {
   try {
     let { phone, mobile, otp } = req.body;
     
-    // ✅ Accept both 'phone' and 'mobile' field names
+    // âœ… Accept both 'phone' and 'mobile' field names
     phone = phone || mobile;
 
-    console.log("🔐 Verify OTP Request - Raw:", { phone, otp, otpType: typeof otp });
+    console.log("ðŸ” Verify OTP Request - Raw:", { phone, otp, otpType: typeof otp });
 
     if (!phone || !otp) {
       return res.status(400).json({ message: "Phone and OTP required" });
     }
 
-    // ✅ Normalize phone number
+    // âœ… Normalize phone number
     phone = normalizePhone(phone);
-    console.log("🔐 Verify OTP Request - Normalized phone:", phone);
+    console.log("ðŸ” Verify OTP Request - Normalized phone:", phone);
 
     if (!phone) {
       return res.status(400).json({ message: "Invalid phone format" });
     }
 
-    // ✅ Convert OTP to number (ensure type matching with DB)
+    // âœ… Convert OTP to number (ensure type matching with DB)
     const otpNumber = Number(otp);
     if (isNaN(otpNumber)) {
       return res.status(400).json({ message: "OTP must be a number" });
     }
 
-    console.log("🔐 Converted OTP:", { original: otp, converted: otpNumber });
+    console.log("ðŸ” Converted OTP:", { original: otp, converted: otpNumber });
 
     if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 10) {
-      console.error("❌ JWT_SECRET not configured properly in .env");
+      console.error("âŒ JWT_SECRET not configured properly in .env");
       return res.status(500).json({ message: "Server configuration error: JWT_SECRET missing or too short" });
     }
 
-    // ✅ Find OTP record
-    console.log("🔍 Searching for OTP in database...");
+    // âœ… Find OTP record
+    console.log("ðŸ” Searching for OTP in database...");
     const record = await prisma.otp.findFirst({
       where: { 
         phone,
@@ -169,34 +176,34 @@ export const verifyOtp = async (req, res) => {
       }
     });
 
-    console.log("🔍 OTP Record Found:", record ? "YES ✅" : "NO ❌", record);
+    console.log("ðŸ” OTP Record Found:", record ? "YES âœ…" : "NO âŒ", record);
 
     if (!record) {
-      console.log("❌ OTP Mismatch - Phone:", phone, "OTP:", otpNumber);
+      console.log("âŒ OTP Mismatch - Phone:", phone, "OTP:", otpNumber);
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
-    // ✅ Check OTP expiration
+    // âœ… Check OTP expiration
     const now = new Date();
     const expiresAt = new Date(record.expiresAt);
-    console.log("⏰ OTP Expiration Check - Current:", now.toISOString(), "Expires:", expiresAt.toISOString());
+    console.log("â° OTP Expiration Check - Current:", now.toISOString(), "Expires:", expiresAt.toISOString());
 
     if (expiresAt < now) {
-      console.log("❌ OTP Expired");
+      console.log("âŒ OTP Expired");
       return res.status(400).json({ message: "OTP expired" });
     }
 
-    // ✅ Check if user exists
-    console.log("👤 Looking up user with mobile:", phone);
+    // âœ… Check if user exists
+    console.log("ðŸ‘¤ Looking up user with mobile:", phone);
     let user = await prisma.user.findFirst({
       where: { mobile: phone }
     });
 
-    console.log("👤 User Found:", user ? "YES ✅" : "NO (will create new)" , user?.id);
+    console.log("ðŸ‘¤ User Found:", user ? "YES âœ…" : "NO (will create new)" , user?.id);
 
-    // ✅ Create user if not exists
+    // âœ… Create user if not exists
     if (!user) {
-      console.log("➕ Creating new user...");
+      console.log("âž• Creating new user...");
       user = await prisma.user.create({
         data: { 
           mobile: phone,
@@ -205,40 +212,40 @@ export const verifyOtp = async (req, res) => {
           password: "default_password"
         }
       });
-      console.log("➕ New User Created:", user.id);
+      console.log("âž• New User Created:", user.id);
     }
 
-    // ✅ Generate JWT Token
-    console.log("🔑 Generating JWT Token...");
+    // âœ… Generate JWT Token
+    console.log("ðŸ”‘ Generating JWT Token...");
     const token = jwt.sign(
       { id: user.id, mobile: user.mobile },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
-    console.log("🔑 JWT Token Generated Successfully");
+    console.log("ðŸ”‘ JWT Token Generated Successfully");
 
-    // ✅ Delete OTP after success
-    console.log("🗑️  Deleting used OTP...");
+    // âœ… Delete OTP after success
+    console.log("ðŸ—‘ï¸  Deleting used OTP...");
     await prisma.otp.deleteMany({
       where: { phone }
     });
-    console.log("🗑️  OTP deleted successfully");
+    console.log("ðŸ—‘ï¸  OTP deleted successfully");
 
-    // ✅ Record successful login attempt
-    console.log("📝 Recording login attempt...");
+    // âœ… Record successful login attempt
+    console.log("ðŸ“ Recording login attempt...");
     await recordLoginAttempt(phone, true, req.clientIp, {
       ...req.geoLocation,
       userAgent: req.get("user-agent")
     });
 
-    // ✅ Create login session with location tracking
-    console.log("🔐 Creating login session...");
+    // âœ… Create login session with location tracking
+    console.log("ðŸ” Creating login session...");
     const session = await createLoginSession(user.id, req.clientIp, {
       ...req.geoLocation,
       userAgent: req.get("user-agent")
     });
 
-    console.log("✅ Login completed successfully");
+    console.log("âœ… Login completed successfully");
 
     res.json({
       message: "OTP verified successfully",
@@ -259,7 +266,7 @@ export const verifyOtp = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ Verify OTP Error:", error.message);
+    console.error("âŒ Verify OTP Error:", error.message);
     console.error("Error Stack:", error.stack);
     res.status(500).json({ 
       message: "Server error",
