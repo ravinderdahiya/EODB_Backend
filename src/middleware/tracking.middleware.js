@@ -1,7 +1,10 @@
 import geoip from "geoip-lite";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 // ✅ Middleware to extract IP address and geolocation
-export const trackingMiddleware = (req, res, next) => {
+export const trackingMiddleware = async (req, res, next) => {
   try {
     // ✅ Extract IP address from various headers
     let ip =
@@ -35,6 +38,11 @@ export const trackingMiddleware = (req, res, next) => {
 
     console.log("📊 Request Tracking:", req.geoLocation);
 
+    // ✅ Save location to database asynchronously (non-blocking)
+    saveLocationLog(req).catch((err) => {
+      console.error("❌ Failed to save location log:", err.message);
+    });
+
     next();
   } catch (error) {
     console.error("❌ Tracking Error:", error.message);
@@ -42,6 +50,34 @@ export const trackingMiddleware = (req, res, next) => {
     req.clientIp = null;
     req.geoLocation = null;
     next();
+  }
+};
+
+// ✅ Function to save location log to database
+export const saveLocationLog = async (req) => {
+  try {
+    const geoLocation = req.geoLocation;
+    const userId = req.user?.id || null;
+
+    await prisma.locationLog.create({
+      data: {
+        ipAddress: geoLocation?.ip || req.clientIp || "unknown",
+        latitude: geoLocation?.latitude || null,
+        longitude: geoLocation?.longitude || null,
+        country: geoLocation?.country || null,
+        city: geoLocation?.city || null,
+        timezone: geoLocation?.timezone || null,
+        userAgent: req.headers["user-agent"] || null,
+        method: req.method || null,
+        url: req.originalUrl || req.url || null,
+        status: null, // Will be updated by response middleware
+        userId: userId,
+      },
+    });
+
+    console.log("✅ Location log saved to database");
+  } catch (error) {
+    console.error("❌ Error saving location log:", error.message);
   }
 };
 

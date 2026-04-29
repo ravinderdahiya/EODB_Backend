@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 
 import userRoutes from "./user/user.routes.js";
 import otpRoutes from "./otp/otp.routes.js";
+import apiUrlRoutes from "./api-url/api-url.routes.js";
 import { trackingMiddleware } from "./middleware/tracking.middleware.js";
 import {
   securityHeaders,
@@ -56,6 +57,7 @@ app.use(session({
 // ✅ Routes
 app.use("/user", userRoutes);
 app.use("/otp", otpRoutes);
+app.use("/api-url", apiUrlRoutes);
 
 // ✅ Health Check
 app.get("/health", (req, res) => {

@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node src/server.js",
+    "build": "vite build",
     "dev": "nodemon src/server.js"
   },
   "keywords": [],
@@ -23,6 +24,7 @@
     "geoip-lite": "^2.0.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
+    "node-fetch": "^3.3.2",
     "nodemailer": "^8.0.5",
     "otp-generator": "^4.0.1"
   },
