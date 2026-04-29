@@ -79,7 +79,7 @@ export const login = async (req, res) => {
         email: user.email,
         role: user.role
       },
-      process.env.AUTH_SECRET,
+      process.env.JWT_SECRET || process.env.AUTH_SECRET || "defaultsecret",
       { expiresIn: "1d" }
     )
 
@@ -93,7 +93,13 @@ export const login = async (req, res) => {
 
     res.json({
       message: "Login success",
-      token
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullname: user.fullname,
+        role: user.role
+      }
     })
 
   } catch (error) {
@@ -102,9 +108,85 @@ export const login = async (req, res) => {
   }
 }
 export const logout = (req, res) => {
-  req.session.destroy(() => {
-    res.json({ message: "Logout success" });
+  // Clear session
+  req.session.destroy((err) => {
+    if (err) {
+      console.error("Logout Error:", err);
+      return res.status(500).json({ message: "Logout failed" });
+    }
+    
+    // Clear client-side storage hints
+    res.json({ 
+      message: "Logout success",
+      clearStorage: true
+    });
   });
+};
+
+// ADMIN LOGIN (supports both admin and superadmin roles)
+export const adminLogin = async (req, res) => {
+  try {
+    const { adminId, password } = req.body;
+
+    if (!adminId || !password) {
+      return res.status(400).json({ message: "Admin ID and password required" });
+    }
+
+    // Find admin user by email/adminId and role (admin or superadmin)
+    const admin = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: adminId },
+          { fullname: adminId }
+        ],
+        role: { in: ["admin", "superadmin"] }
+      }
+    });
+
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+
+    const match = await bcrypt.compare(password, admin.password);
+
+    if (!match) {
+      return res.status(401).json({ message: "Wrong password" });
+    }
+
+    const token = jwt.sign(
+      {
+        id: admin.id,
+        email: admin.email,
+        role: admin.role
+      },
+      process.env.JWT_SECRET || process.env.AUTH_SECRET || "defaultsecret",
+      { expiresIn: "1d" }
+    );
+
+    const ip = getIP(req);
+
+    req.session.user = {
+      id: admin.id,
+      email: admin.email,
+      role: admin.role,
+      ip: ip
+    };
+
+    res.json({
+      message: "Admin login success",
+      token,
+      user: {
+        id: admin.id,
+        email: admin.email,
+        fullname: admin.fullname,
+        role: admin.role
+      }
+    });
+
+  } catch (error) {
+    console.error("Admin Login Error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
 };
 
 export const getMe = (req, res) => {
