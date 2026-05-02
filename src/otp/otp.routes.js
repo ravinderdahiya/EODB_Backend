@@ -5,6 +5,6 @@ import { otpLimiter, loginLimiter } from "../middleware/security.middleware.js";
 const router = express.Router();
 
 router.post("/send-otp", otpLimiter, sendOtp);
-router.post("/verify-otp", loginLimiter, verifyOtp);
+router.post("/verify-otp", verifyOtp);
 
 export default router;

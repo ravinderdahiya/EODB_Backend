@@ -19,6 +19,18 @@ dotenv.config();
 
 const app = express();
 
+// ✅ IIS virtual directory fix
+// If IIS forwards URL like /eodb_backend/otp/send-otp,
+// remove /eodb_backend before Express route matching.
+app.use((req, res, next) => {
+  if (req.url === "/eodb_backend") {
+    req.url = "/";
+  } else if (req.url.startsWith("/eodb_backend/")) {
+    req.url = req.url.replace(/^\/eodb_backend/, "");
+  }
+  next();
+});
+
 // ✅ Security Headers
 app.use(securityHeaders);
 

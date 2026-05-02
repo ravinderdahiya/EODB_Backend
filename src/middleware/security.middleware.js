@@ -1,6 +1,7 @@
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import prisma from "../config/db.js";
+
 
 // ✅ Helmet middleware - Set security HTTP headers
 export const securityHeaders = helmet({
@@ -19,7 +20,7 @@ export const generalLimiter = rateLimit({
   skip: (req) => req.path === "/", // Skip for root path
   keyGenerator: (req) => {
     // Use IP as key
-    return req.clientIp || req.ip;
+    return ipKeyGenerator(req);
   },
 });
 
@@ -31,7 +32,7 @@ export const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => {
-    return req.clientIp || req.ip;
+    return ipKeyGenerator(req);
   },
 });
 
@@ -44,7 +45,7 @@ export const otpLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const phone = req.body?.phone || req.body?.mobile;
-    return `${req.clientIp || req.ip}_${phone}`;
+    return `${ipKeyGenerator(req)}_${phone}`;
   },
 });
 
@@ -126,6 +127,7 @@ export const corsOptions = {
     "http://localhost:3000",
     "http://localhost:5000",
     "http://localhost:5173",
+    "http://localhost:5174",
     "https://yourdomain.com",
   ],
   credentials: true,
