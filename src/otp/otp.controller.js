@@ -4,6 +4,7 @@ import axios from "axios";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import { recordLoginAttempt, createLoginSession } from "../middleware/security.middleware.js";
+import analyticsService from "../services/analyticsService.js";
 
 dotenv.config();
 
@@ -78,6 +79,9 @@ export const sendOtp = async (req, res) => {
     });
 
     console.log("âœ… OTP Created:", { phone, otp, expiresAt: new Date(Date.now() + 5 * 60 * 1000) });
+
+    // Track OTP send event
+    analyticsService.trackOtpEvent('otp_sent', phone);
 
     // ===================== SEND SMS VIA PIXABITS API =====================
     try {
@@ -244,6 +248,9 @@ export const verifyOtp = async (req, res) => {
       ...req.geoLocation,
       userAgent: req.get("user-agent")
     });
+
+    // Track successful login in Google Analytics
+    analyticsService.trackAuthEvent('login_success', user.id, null, { mobile: user.mobile });
 
     console.log("âœ… Login completed successfully");
 

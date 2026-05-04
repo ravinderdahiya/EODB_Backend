@@ -14,6 +14,7 @@ import {
   requestLogger,
   corsOptions,
 } from "./middleware/security.middleware.js";
+import analyticsService from "./services/analyticsService.js";
 
 dotenv.config();
 
@@ -70,6 +71,32 @@ app.use(session({
 app.use("/user", userRoutes);
 app.use("/otp", otpRoutes);
 app.use("/api-url", apiUrlRoutes);
+
+// ✅ Response Tracking Middleware (must be after routes)
+app.use((req, res, next) => {
+  const originalSend = res.send;
+  const originalJson = res.json;
+
+  // Override send method
+  res.send = function(data) {
+    // Track API response in Google Analytics
+    analyticsService.trackApiUsage(req.path, req.method, res.statusCode, req.user?.id);
+
+    // Call original send
+    return originalSend.call(this, data);
+  };
+
+  // Override json method
+  res.json = function(data) {
+    // Track API response in Google Analytics
+    analyticsService.trackApiUsage(req.path, req.method, res.statusCode, req.user?.id);
+
+    // Call original json
+    return originalJson.call(this, data);
+  };
+
+  next();
+});
 
 // ✅ Health Check
 app.get("/health", (req, res) => {

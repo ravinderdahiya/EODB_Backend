@@ -1,5 +1,6 @@
 import geoip from "geoip-lite";
 import { PrismaClient } from "@prisma/client";
+import analyticsService from "../services/analyticsService.js";
 
 const prisma = new PrismaClient();
 
@@ -43,6 +44,9 @@ export const trackingMiddleware = async (req, res, next) => {
       console.error("❌ Failed to save location log:", err.message);
     });
 
+    // ✅ Track API usage in Google Analytics
+    analyticsService.trackApiUsage(req.path, req.method, null, req.user?.id);
+
     next();
   } catch (error) {
     console.error("❌ Tracking Error:", error.message);
@@ -58,8 +62,15 @@ export const saveLocationLog = async (req) => {
   try {
     const geoLocation = req.geoLocation;
     const userId = req.user?.id || null;
+    const mobile =
+      req.user?.mobile ||
+      req.body?.mobile ||
+      req.body?.phone ||
+      req.query?.mobile ||
+      req.query?.phone ||
+      null;
 
-    await prisma.locationLog.create({
+    await prisma.loginSessionLog.create({
       data: {
         ipAddress: geoLocation?.ip || req.clientIp || "unknown",
         latitude: geoLocation?.latitude || null,
@@ -70,8 +81,10 @@ export const saveLocationLog = async (req) => {
         userAgent: req.headers["user-agent"] || null,
         method: req.method || null,
         url: req.originalUrl || req.url || null,
-        status: null, // Will be updated by response middleware
+        responseStatus: null, // Will be updated by response middleware
         userId: userId,
+        mobile: mobile ? String(mobile).replace(/\D/g, "") : null,
+        type: "request", // Default type for general requests
       },
     });
 

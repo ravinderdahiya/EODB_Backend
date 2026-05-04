@@ -46,8 +46,8 @@ async function main() {
 
   // Create additional admin users if needed
   const adminUsers = [
-    { email: "admin1@harsac.gov.in", fullname: "Admin One", password: "admin123" },
-    { email: "admin2@harsac.gov.in", fullname: "Admin Two", password: "admin123" },
+    { email: "admin1@harsac.gov.in", fullname: "Admin One", password: "admin123", mobile: "8888888881" },
+    { email: "admin2@harsac.gov.in", fullname: "Admin Two", password: "admin123", mobile: "8888888882" },
   ];
 
   for (const adminUser of adminUsers) {
@@ -62,7 +62,7 @@ async function main() {
           fullname: adminUser.fullname,
           email: adminUser.email,
           password: hashedPassword,
-          mobile: "8888888888",
+          mobile: adminUser.mobile,
           role: "admin",
         },
       });

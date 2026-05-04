@@ -137,20 +137,35 @@ export const corsOptions = {
 };
 
 // ✅ Helper function to record login attempt
-export const recordLoginAttempt = async (phone, success, ip, geoLocation) => {
+export const recordLoginAttempt = async (phone, success, ip, geoLocation, userAgent = null) => {
   try {
     const normalizedPhone = String(phone).replace(/\D/g, '').slice(-10);
-    
+
     const user = await prisma.user.findFirst({
       where: { mobile: normalizedPhone }
     });
 
     if (!user) {
+      // Create log entry for unknown phone number
+      await prisma.loginSessionLog.create({
+        data: {
+          ipAddress: ip,
+          latitude: geoLocation?.latitude || null,
+          longitude: geoLocation?.longitude || null,
+          country: geoLocation?.country || null,
+          city: geoLocation?.city || null,
+          timezone: geoLocation?.timezone || null,
+          userAgent: userAgent,
+          mobile: normalizedPhone,
+          type: success ? "login_success" : "login_failed",
+          status: success ? "success" : "failed",
+        },
+      });
       return null;
     }
 
     if (success) {
-      // ✅ Successful login - reset attempts and create session
+      // ✅ Successful login - reset attempts and update user
       await prisma.user.update({
         where: { id: user.id },
         data: {
@@ -161,6 +176,24 @@ export const recordLoginAttempt = async (phone, success, ip, geoLocation) => {
           lastLoginLat: geoLocation?.latitude || null,
           lastLoginLng: geoLocation?.longitude || null,
           lastLoginAt: new Date(),
+        },
+      });
+
+      // Create success log entry
+      await prisma.loginSessionLog.create({
+        data: {
+          userId: user.id,
+          ipAddress: ip,
+          latitude: geoLocation?.latitude || null,
+          longitude: geoLocation?.longitude || null,
+          country: geoLocation?.country || null,
+          city: geoLocation?.city || null,
+          timezone: geoLocation?.timezone || null,
+          userAgent: userAgent,
+          mobile: normalizedPhone,
+          type: "login_success",
+          status: "success",
+          loginAt: new Date(),
         },
       });
 
@@ -180,6 +213,23 @@ export const recordLoginAttempt = async (phone, success, ip, geoLocation) => {
         },
       });
 
+      // Create failure log entry
+      await prisma.loginSessionLog.create({
+        data: {
+          userId: user.id,
+          ipAddress: ip,
+          latitude: geoLocation?.latitude || null,
+          longitude: geoLocation?.longitude || null,
+          country: geoLocation?.country || null,
+          city: geoLocation?.city || null,
+          timezone: geoLocation?.timezone || null,
+          userAgent: userAgent,
+          mobile: normalizedPhone,
+          type: "login_failed",
+          status: "failed",
+        },
+      });
+
       console.log(`⚠️  Login failed attempt ${newAttempts} for:`, normalizedPhone);
 
       if (isLocked) {
@@ -195,18 +245,24 @@ export const recordLoginAttempt = async (phone, success, ip, geoLocation) => {
 };
 
 // ✅ Helper function to create login session
-export const createLoginSession = async (userId, ip, geoLocation) => {
+export const createLoginSession = async (userId, ip, geoLocation, userAgent = null) => {
   try {
-    const session = await prisma.loginSession.create({
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    const session = await prisma.loginSessionLog.create({
       data: {
         userId,
+        sessionId,
         ipAddress: ip,
         latitude: geoLocation?.latitude || null,
         longitude: geoLocation?.longitude || null,
         country: geoLocation?.country || null,
         city: geoLocation?.city || null,
-        userAgent: geoLocation?.userAgent || null,
+        timezone: geoLocation?.timezone || null,
+        userAgent: userAgent,
+        type: "session_start",
         status: "active",
+        loginAt: new Date(),
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
       },
     });
