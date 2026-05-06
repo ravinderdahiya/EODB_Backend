@@ -56,7 +56,7 @@ app.use(checkAccountLock);
 
 // ✅ Session Configuration
 app.use(session({
-  secret: process.env.SESSION_SECRET || "mysecretkey",
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -98,13 +98,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ Health Check
+// Health Check — no client data in response (IP/location removed — was H-3 data leak)
 app.get("/health", (req, res) => {
   res.json({
     status: "OK",
     timestamp: new Date().toISOString(),
-    ip: req.clientIp,
-    location: req.geoLocation,
   });
 });
 
