@@ -64,9 +64,6 @@ export const login = async (req, res) => {
       return res.status(404).json({ message: "User not found" })
     }
 
-
-
-
     const match = await bcrypt.compare(password, user.password)
 
     if (!match) {
@@ -91,6 +88,14 @@ export const login = async (req, res) => {
       ip: ip
     };
 
+    res.cookie("auth_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
+      path: "/",
+    });
+
     res.json({
       message: "Login success",
       token,
@@ -107,6 +112,7 @@ export const login = async (req, res) => {
     res.status(500).json({ message: "Internal server error" })
   }
 }
+
 export const logout = (req, res) => {
   // Clear session
   req.session.destroy((err) => {
@@ -114,9 +120,11 @@ export const logout = (req, res) => {
       console.error("Logout Error:", err);
       return res.status(500).json({ message: "Logout failed" });
     }
-    
-    // Clear client-side storage hints
-    res.json({ 
+
+    // Clear auth cookie + client-side storage hints
+    res.clearCookie("auth_token", { path: "/" });
+
+    res.json({
       message: "Logout success",
       clearStorage: true
     });
@@ -143,10 +151,9 @@ export const adminLogin = async (req, res) => {
       }
     });
 
-    console.log("🔍 Admin lookup result:", admin);
+    console.log("Admin lookup result:", admin);
 
     if (!admin) {
-      console.log("❌ Admin not found for:", adminId);
       return res.status(404).json({ message: "Admin not found" });
     }
 
@@ -166,8 +173,6 @@ export const adminLogin = async (req, res) => {
       { expiresIn: "1d" }
     );
 
-    console.log("🔑 JWT Token created with payload - id:", admin.id, "email:", admin.email, "role:", admin.role);
-
     const ip = getIP(req);
 
     req.session.user = {
@@ -176,6 +181,14 @@ export const adminLogin = async (req, res) => {
       role: admin.role,
       ip: ip
     };
+
+    res.cookie("auth_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
+      path: "/",
+    });
 
     res.json({
       message: "Admin login success",
@@ -196,33 +209,28 @@ export const adminLogin = async (req, res) => {
 
 export const getLoginLogs = async (req, res) => {
   try {
-    console.log("🔍 getLoginLogs called");
-    console.log("📦 req.user full object:", JSON.stringify(req.user, null, 2));
-
     if (!req.user) {
-      console.log("❌ ERROR: No req.user - auth middleware may have failed");
       return res.status(403).json({ message: "Access denied - no user in token" });
     }
 
     const userId = req.user.id;
-    const userEmail = req.user.email;
-    const userRole = req.user.role;
+    const tokenRole = req.user.role;
 
-    console.log(`📋 User - ID: ${userId}, Email: ${userEmail}, Role: "${userRole}" (type: ${typeof userRole})`);
+    // Use DB role as source of truth (token may carry stale role)
+    const dbUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
 
-    const normalizedRole = String(userRole || "").toLowerCase().trim();
-    console.log(`🔑 Normalized role: "${normalizedRole}"`);
+    const effectiveRole = String(dbUser?.role || tokenRole || "").toLowerCase().trim();
 
-    if (!["admin", "superadmin"].includes(normalizedRole)) {
-      console.log(`❌ Access denied - role "${normalizedRole}" is not admin/superadmin`);
+    if (!["admin", "superadmin"].includes(effectiveRole)) {
       return res.status(403).json({
         message: "Access denied - user must be admin or superadmin",
-        userRole: userRole,
-        normalizedRole: normalizedRole,
+        tokenRole,
+        dbRole: dbUser?.role || null,
       });
     }
-
-    console.log("✅ Role check passed, fetching login logs...");
 
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 5), 50);
@@ -306,8 +314,8 @@ export const getMe = (req, res) => {
 // DEBUG: Check current token user info
 export const getTokenInfo = async (req, res) => {
   try {
-    console.log("🔍 Token Info - req.user:", req.user);
-    
+    console.log("Token Info - req.user:", req.user);
+
     if (!req.user) {
       return res.status(401).json({ message: "No valid token" });
     }

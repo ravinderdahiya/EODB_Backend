@@ -8,8 +8,8 @@ const getCookieToken = (req) => {
 };
 
 export const authMiddleware = (req, res, next) => {
-  // Cookie takes priority; Authorization: Bearer <token> works as fallback
-  const token = getCookieToken(req) || req.headers.authorization?.split(" ")[1];
+  // Authorization header takes priority; cookie works as fallback
+  const token = req.headers.authorization?.split(" ")[1] || getCookieToken(req);
 
   if (!token) {
     return res.status(401).json({ message: "Authentication required" });
@@ -23,3 +23,4 @@ export const authMiddleware = (req, res, next) => {
     res.status(401).json({ message: "Invalid or expired token" });
   }
 };
+
