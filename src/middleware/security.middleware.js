@@ -36,16 +36,30 @@ export const loginLimiter = rateLimit({
   },
 });
 
-// ✅ OTP rate limiter - 3 attempts per 5 minutes
+// OTP send limiter - 3 sends per 5 minutes per IP+phone
 export const otpLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 3, // 3 attempts per windowMs
+  windowMs: 5 * 60 * 1000,
+  max: 3,
   message: "Too many OTP requests, please try again after 5 minutes",
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => {
     const phone = req.body?.phone || req.body?.mobile;
-    return `${ipKeyGenerator(req)}_${phone}`;
+    return `send_${ipKeyGenerator(req)}_${phone}`;
+  },
+});
+
+// OTP verify limiter - 3 attempts per 5 minutes per IP+phone
+// Without this, 6-digit OTP (900k combinations) is brute-forceable in ~8 hours
+export const verifyOtpLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 3,
+  message: "Too many OTP verification attempts, please try again after 5 minutes",
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const phone = req.body?.phone || req.body?.mobile;
+    return `verify_${ipKeyGenerator(req)}_${phone}`;
   },
 });
 
@@ -85,7 +99,7 @@ export const checkAccountLock = async (req, res, next) => {
           loginAttempts: 0,
         },
       });
-      console.log("🔓 Account unlocked:", user.mobile);
+      console.log("Account unlocked: user", user.id);
     }
 
     next();
@@ -121,15 +135,27 @@ export const requestLogger = (req, res, next) => {
   next();
 };
 
-// ✅ CORS configuration
+// CORS configuration — origins driven by env var
+// In production: set ALLOWED_ORIGINS="https://hsac.org.in" in .env
+// In development: localhost origins allowed automatically
+const productionOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+  : [];
+
+const devOrigins =
+  process.env.NODE_ENV !== "production"
+    ? ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"]
+    : [];
+
+const allowedOrigins = new Set([...productionOrigins, ...devOrigins]);
+
 export const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:5000",
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "https://yourdomain.com",
-  ],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (server-to-server, curl, Postman)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.has(origin)) return callback(null, true);
+    callback(new Error(`CORS blocked: origin ${origin} not allowed`));
+  },
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],

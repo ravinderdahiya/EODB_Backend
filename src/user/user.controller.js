@@ -1,129 +1,100 @@
-import prisma from "../config/db.js"
-import bcrypt from "bcrypt"
-import jwt from "jsonwebtoken"
+import prisma from "../config/db.js";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 
+const getIP = (req) => req.headers["x-forwarded-for"] || req.socket.remoteAddress;
 
-// Get IP 
-const getIP = (req) => {
-  return req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-};
-// SIGNUP
-export const signup = async (req, res) => {
-  try {
-    const { fullname, email, password, mobile } = req.body
-
-    // basic validation
-    if (!fullname || !email || !password || !mobile) {
-      return res.status(400).json({ message: "All fields are required" })
-    }
-
-    const exist = await prisma.user.findUnique({
-      where: { email }
-    })
-
-    if (exist) {
-      return res.status(400).json({ message: "User already exists" })
-    }
-
-    const hash = await bcrypt.hash(password, 10)
-
-    await prisma.user.create({
-      data: {
-        fullname,
-        email,
-        password: hash,
-        mobile
-      }
-    })
-
-    res.json({ message: "Signup successful" })
-
-  } catch (error) {
-    console.error("Signup Error:", error)
-    res.status(500).json({ message: "Internal server error" })
-  }
-}
-
-
-// LOGIN
-
-export const login = async (req, res) => {
-  try {
-    const { email, password } = req.body
-    console.log(req.body)
-
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password required" })
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { email }
-    })
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" })
-    }
-
-
-
-
-    const match = await bcrypt.compare(password, user.password)
-
-    if (!match) {
-      return res.status(401).json({ message: "Wrong password" })
-    }
-
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role
-      },
-      process.env.JWT_SECRET || process.env.AUTH_SECRET || "defaultsecret",
-      { expiresIn: "1d" }
-    )
-
-    const ip = getIP(req);
-
-    req.session.user = {
-      id: user.id,
-      email: user.email,
-      ip: ip
-    };
-
-    res.json({
-      message: "Login success",
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        fullname: user.fullname,
-        role: user.role
-      }
-    })
-
-  } catch (error) {
-    console.error("Login Error:", error)
-    res.status(500).json({ message: "Internal server error" })
-  }
-}
-export const logout = (req, res) => {
-  // Clear session
-  req.session.destroy((err) => {
-    if (err) {
-      console.error("Logout Error:", err);
-      return res.status(500).json({ message: "Logout failed" });
-    }
-    
-    // Clear client-side storage hints
-    res.json({ 
-      message: "Logout success",
-      clearStorage: true
-    });
+const setAuthCookie = (res, token) => {
+  res.cookie("auth_token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    maxAge: 24 * 60 * 60 * 1000,
+    path: "/",
   });
 };
 
-// ADMIN LOGIN (supports both admin and superadmin roles)
+// SIGNUP
+export const signup = async (req, res) => {
+  try {
+    const { fullname, email, password, mobile } = req.body;
+
+    if (!fullname || !email || !password || !mobile) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    const exist = await prisma.user.findUnique({ where: { email } });
+    if (exist) {
+      return res.status(400).json({ message: "User already exists" });
+    }
+
+    const hash = await bcrypt.hash(password, 10);
+    await prisma.user.create({ data: { fullname, email, password: hash, mobile } });
+
+    res.json({ message: "Signup successful" });
+  } catch (error) {
+    console.error("Signup Error:", error.message);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// LOGIN (email + password)
+export const login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password required" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    // Generic message — do not distinguish "user not found" vs "wrong password"
+    const INVALID_MSG = "Invalid email or password";
+
+    if (!user) {
+      // Still run bcrypt to prevent timing attack
+      await bcrypt.compare(password, "$2b$10$invalidhashtopreventtimingattack00000000000");
+      return res.status(401).json({ message: INVALID_MSG });
+    }
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      return res.status(401).json({ message: INVALID_MSG });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    req.session.user = { id: user.id, email: user.email, ip: getIP(req) };
+    setAuthCookie(res, token);
+
+    res.json({
+      message: "Login success",
+      user: { id: user.id, email: user.email, fullname: user.fullname, role: user.role },
+    });
+  } catch (error) {
+    console.error("Login Error:", error.message);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// LOGOUT
+export const logout = (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      console.error("Logout Error:", err.message);
+      return res.status(500).json({ message: "Logout failed" });
+    }
+    res.clearCookie("auth_token", { httpOnly: true, path: "/" });
+    res.json({ message: "Logout success" });
+  });
+};
+
+// ADMIN LOGIN
 export const adminLogin = async (req, res) => {
   try {
     const { adminId, password } = req.body;
@@ -132,40 +103,40 @@ export const adminLogin = async (req, res) => {
       return res.status(400).json({ message: "Admin ID and password required" });
     }
 
-    // Find admin user by email/adminId and role (admin or superadmin)
     const admin = await prisma.user.findFirst({
       where: {
-        OR: [
-          { email: adminId },
-          { fullname: adminId }
-        ],
-        role: { in: ["admin", "superadmin"] }
-      }
+        OR: [{ email: adminId }, { fullname: adminId }],
+        role: { in: ["admin", "superadmin"] },
+      },
     });
 
+<<<<<<< HEAD
     console.log("🔍 Admin lookup result:", admin);
 
     if (!admin) {
       console.log("❌ Admin not found for:", adminId);
       return res.status(404).json({ message: "Admin not found" });
+=======
+    const INVALID_MSG = "Invalid admin ID or password";
+
+    if (!admin) {
+      await bcrypt.compare(password, "$2b$10$invalidhashtopreventtimingattack00000000000");
+      return res.status(401).json({ message: INVALID_MSG });
+>>>>>>> d9acb44 (updated by nitin)
     }
 
     const match = await bcrypt.compare(password, admin.password);
-
     if (!match) {
-      return res.status(401).json({ message: "Wrong password" });
+      return res.status(401).json({ message: INVALID_MSG });
     }
 
     const token = jwt.sign(
-      {
-        id: admin.id,
-        email: admin.email,
-        role: admin.role
-      },
-      process.env.JWT_SECRET || process.env.AUTH_SECRET || "defaultsecret",
+      { id: admin.id, email: admin.email, role: admin.role },
+      process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
+<<<<<<< HEAD
     console.log("🔑 JWT Token created with payload - id:", admin.id, "email:", admin.email, "role:", admin.role);
 
     const ip = getIP(req);
@@ -176,20 +147,17 @@ export const adminLogin = async (req, res) => {
       role: admin.role,
       ip: ip
     };
+=======
+    req.session.user = { id: admin.id, email: admin.email, role: admin.role, ip: getIP(req) };
+    setAuthCookie(res, token);
+>>>>>>> d9acb44 (updated by nitin)
 
     res.json({
       message: "Admin login success",
-      token,
-      user: {
-        id: admin.id,
-        email: admin.email,
-        fullname: admin.fullname,
-        role: admin.role
-      }
+      user: { id: admin.id, email: admin.email, fullname: admin.fullname, role: admin.role },
     });
-
   } catch (error) {
-    console.error("Admin Login Error:", error);
+    console.error("Admin Login Error:", error.message);
     res.status(500).json({ message: "Internal server error" });
   }
 };
@@ -302,6 +270,7 @@ export const getMe = (req, res) => {
     res.status(401).json({ message: "Not logged in" });
   }
 };
+<<<<<<< HEAD
 
 // DEBUG: Check current token user info
 export const getTokenInfo = async (req, res) => {
@@ -349,3 +318,5 @@ export const getAdminUsers = async (req, res) => {
     res.status(500).json({ message: "Error fetching admin users" });
   }
 };
+=======
+>>>>>>> d9acb44 (updated by nitin)
