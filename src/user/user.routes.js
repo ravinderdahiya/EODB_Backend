@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { signup, login, logout, getMe, adminLogin } from "./user.controller.js"
+import { signup, login, logout, getMe, adminLogin, getLoginLogs, getTokenInfo, getAdminUsers } from "./user.controller.js"
 import { authMiddleware } from "../middleware/auth.middleware.js"
 
 const router = Router()
@@ -9,6 +9,9 @@ router.post("/login", login)
 router.post("/admin-login", adminLogin)
 router.post("/logout", logout);
 router.get("/me", getMe);
+router.get("/login-logs", authMiddleware, getLoginLogs);
+router.get("/token-info", authMiddleware, getTokenInfo);
+router.get("/admin-users", authMiddleware, getAdminUsers);
 
 // Protected route
 router.get("/profile", authMiddleware, (req, res) => {
