@@ -99,6 +99,79 @@ export const sendOtp = async (req, res) => {
   }
 };
 
+// ===================== RESEND OTP =====================
+export const resendOtp = async (req, res) => {
+  try {
+    let { phone, mobile } = req.body;
+    phone = phone || mobile;
+
+    if (!phone) {
+      return res.status(400).json({ message: "Phone required" });
+    }
+
+    phone = normalizePhone(phone);
+
+    if (!phone) {
+      return res.status(400).json({ message: "Invalid phone format" });
+    }
+
+    const otp = Math.floor(1000 + Math.random() * 9000);
+
+    await prisma.otp.deleteMany({ where: { phone } });
+
+    await prisma.otp.create({
+      data: {
+        phone,
+        otp,
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      },
+    });
+
+    if (process.env.NODE_ENV === "development") {
+      console.log(`[DEV ONLY - never in response] Resent OTP for ${phone}: ${otp}`);
+    }
+
+    analyticsService.trackOtpEvent("otp_resent", phone);
+
+    try {
+      const message = `Your One Time Password is ${otp} for your application. Don't share OTP with anyone.HARSAC`;
+
+      await axios.post("https://sms.pixabits.in/smsapi/sms/custom/send", {
+        key: process.env.SMS_API_KEY,
+        text: message,
+        senderId: process.env.SMS_SENDER_ID,
+        tempDltId: process.env.SMS_TEMP_DLT_ID,
+        route: "Domestic",
+        phoneno: formatSmsPhone(phone),
+        groupIds: [" "],
+        trans: 1,
+        unicode: 0,
+        flash: false,
+        tiny: false,
+      });
+
+      res.json({
+        message: "OTP resent successfully",
+        phone,
+        smsSent: true,
+        expiresIn: "5 minutes",
+      });
+    } catch (smsError) {
+      console.error("SMS API Error:", smsError.message);
+      res.json({
+        message: "OTP resent (SMS delivery pending)",
+        phone,
+        smsSent: false,
+        warning: "OTP saved but SMS delivery failed. Contact support.",
+        expiresIn: "5 minutes",
+      });
+    }
+  } catch (error) {
+    console.error("Resend OTP Error:", error.message);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 // ===================== VERIFY OTP + LOGIN =====================
 export const verifyOtp = async (req, res) => {
   try {
