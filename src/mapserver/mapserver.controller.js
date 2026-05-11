@@ -1,19 +1,279 @@
 import fetch from 'node-fetch';
+import prisma from '../config/db.js';
 import { logSecurityEvent } from '../services/auditLogService.js';
 
-const HSAC_ORIGIN = process.env.HSAC_ORIGIN || 'https://hsac.org.in';
-const HSAC_MAP_SERVICE_PATH = process.env.HSAC_MAP_SERVICE_PATH || '/server/rest/services/EODB/EODB_HR23/MapServer';
-const HSAC_ASMX_BASE_PATH = process.env.HSAC_ASMX_BASE_PATH || '/LandOwnerAPI/getownername.asmx';
+const UPSTREAM_CONFIG_KEYS = [
+  'VITE_HSAC_ORIGIN',
+  'VITE_HSAC_MAP_SERVICE_PATH',
+  'VITE_HSAC_DOTNET_PROXY_URL',
+  'VITE_ASMX_BASE_PATH',
+  'VITE_ARCGIS_GEOCODER_URL',
+  'VITE_HARYANA_BOUNDARY_URL',
+  'VITE_HSACGGM_ASSETS_URL',
+  'VITE_NHAI_ROADS_URL',
+  'VITE_HARYANA_ROADS_URL',
+  'VITE_ARCGIS_IMAGERY_URL',
+  'VITE_ARCGIS_REFERENCE_URL',
+  'VITE_ARCGIS_TOPO_URL',
+  'VITE_ARCGIS_STREETS_URL',
+];
+
+const DEFAULT_UPSTREAM_CONFIG = {
+  VITE_HSAC_ORIGIN: process.env.HSAC_ORIGIN || 'https://hsac.org.in',
+  VITE_HSAC_MAP_SERVICE_PATH:
+    process.env.HSAC_MAP_SERVICE_PATH || '/server/rest/services/EODB/EODB_HR23/MapServer',
+  VITE_HSAC_DOTNET_PROXY_URL:
+    process.env.HSAC_DOTNET_PROXY_URL ||
+    process.env.VITE_HSAC_DOTNET_PROXY_URL ||
+    'https://hsac.org.in/DotNet/proxy.ashx',
+  VITE_ASMX_BASE_PATH: process.env.HSAC_ASMX_BASE_PATH || '/LandOwnerAPI/getownername.asmx',
+  VITE_ARCGIS_GEOCODER_URL:
+    'https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer',
+  VITE_HARYANA_BOUNDARY_URL:
+    'https://services1.arcgis.com/qN3V93cYGMKQCOxL/arcgis/rest/services/HARYANA_BOUNDARY/FeatureServer/0',
+  VITE_HSACGGM_ASSETS_URL:
+    'https://hsacggm.in/server/rest/services/Onemap_Haryana/Government_Assets/MapServer',
+  VITE_NHAI_ROADS_URL:
+    'https://onemapggm.gmda.gov.in/server/rest/services/NHAI_All/MapServer',
+  VITE_HARYANA_ROADS_URL:
+    'https://hsacggm.in/server/rest/services/Onemap_Haryana/Haryana_Roads/MapServer',
+  VITE_ARCGIS_IMAGERY_URL:
+    'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
+  VITE_ARCGIS_REFERENCE_URL:
+    'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer',
+  VITE_ARCGIS_TOPO_URL:
+    'https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer',
+  VITE_ARCGIS_STREETS_URL:
+    'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer',
+};
+
+function normalizeOrigin(origin) {
+  return `${origin || ''}`.trim().replace(/\/+$/, '');
+}
+
+function normalizePath(path) {
+  const raw = `${path || ''}`.trim();
+  if (!raw) return '';
+  return raw.startsWith('/') ? raw : `/${raw}`;
+}
+
+function joinOriginAndPath(origin, path) {
+  const normalizedOrigin = normalizeOrigin(origin);
+  const normalizedPath = normalizePath(path);
+  return `${normalizedOrigin}${normalizedPath}`;
+}
+
+function toQueryString(queryObject = {}) {
+  const params = new URLSearchParams();
+  Object.entries(queryObject).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item !== undefined && item !== null) {
+          params.append(key, String(item));
+        }
+      });
+      return;
+    }
+    params.append(key, String(value));
+  });
+  return params.toString();
+}
+
+function isAbsoluteHttpUrl(value) {
+  return /^https?:\/\//i.test(`${value || ''}`.trim());
+}
+
+function normalizeProxyUrl(value) {
+  return `${value || ''}`.trim().replace(/\?+$/, '');
+}
+
+function wrapWithDotNetProxyIfNeeded(targetUrl, config, { serviceKey } = {}) {
+  const proxyUrl = normalizeProxyUrl(config.VITE_HSAC_DOTNET_PROXY_URL);
+  const hsacOrigin = normalizeOrigin(config.VITE_HSAC_ORIGIN);
+
+  if (!isAbsoluteHttpUrl(proxyUrl) || !isAbsoluteHttpUrl(hsacOrigin)) {
+    return targetUrl;
+  }
+
+  const shouldProxy =
+    serviceKey === 'hsacMain' || `${targetUrl || ''}`.startsWith(`${hsacOrigin}/`);
+
+  if (!shouldProxy) {
+    return targetUrl;
+  }
+
+  return `${proxyUrl}?${encodeURIComponent(targetUrl)}`;
+}
+
+async function getUpstreamRuntimeConfig() {
+  const config = { ...DEFAULT_UPSTREAM_CONFIG };
+
+  const entries = await prisma.apiUrl.findMany({
+    where: {
+      name: { in: UPSTREAM_CONFIG_KEYS },
+      isActive: true,
+    },
+    select: {
+      name: true,
+      url: true,
+    },
+  });
+
+  for (const item of entries) {
+    if (typeof item.url === 'string' && item.url.trim()) {
+      config[item.name] = item.url.trim();
+    }
+  }
+
+  return config;
+}
+
+function resolveServiceBaseUrl(serviceKey, config) {
+  switch (`${serviceKey || ''}`.trim()) {
+    case 'hsacMain':
+      return joinOriginAndPath(config.VITE_HSAC_ORIGIN, config.VITE_HSAC_MAP_SERVICE_PATH);
+    case 'governmentAssets':
+      return config.VITE_HSACGGM_ASSETS_URL;
+    case 'nhaiRoads':
+      return config.VITE_NHAI_ROADS_URL;
+    case 'haryanaRoads':
+      return config.VITE_HARYANA_ROADS_URL;
+    case 'haryanaBoundary':
+      return config.VITE_HARYANA_BOUNDARY_URL;
+    case 'geocoder':
+      return config.VITE_ARCGIS_GEOCODER_URL;
+    case 'imagery':
+      return config.VITE_ARCGIS_IMAGERY_URL;
+    case 'reference':
+      return config.VITE_ARCGIS_REFERENCE_URL;
+    case 'topo':
+      return config.VITE_ARCGIS_TOPO_URL;
+    case 'streets':
+      return config.VITE_ARCGIS_STREETS_URL;
+    default:
+      return null;
+  }
+}
+
+function buildProxyBody(req) {
+  if (req.method === 'GET' || req.method === 'HEAD') return undefined;
+  if (!req.body) return undefined;
+
+  if (typeof req.body === 'string') {
+    return req.body;
+  }
+
+  if (req.is('application/json')) {
+    return JSON.stringify(req.body);
+  }
+
+  if (typeof req.body === 'object') {
+    const form = new URLSearchParams();
+    Object.entries(req.body).forEach(([key, value]) => {
+      if (value === undefined || value === null) return;
+      if (Array.isArray(value)) {
+        value.forEach((item) => form.append(key, String(item)));
+      } else {
+        form.append(key, String(value));
+      }
+    });
+    return form.toString();
+  }
+
+  return undefined;
+}
+
+async function forwardRequest(
+  req,
+  res,
+  targetUrl,
+  { action, resource, method, body, contentType },
+) {
+  const userId = req.user?.sub || req.user?.id || 'unknown';
+
+  await logSecurityEvent({
+    userId,
+    action,
+    resource,
+    ip: req.ip,
+    params: req.query,
+  });
+
+  const headers = {
+    'User-Agent': 'EODB-Backend-Proxy/1.0',
+    Accept: req.get('accept') || '*/*',
+  };
+
+  const effectiveMethod = method || req.method;
+  const requestBody = body !== undefined ? body : (method ? undefined : buildProxyBody(req));
+
+  if (requestBody !== undefined) {
+    headers['Content-Type'] =
+      contentType || req.get('content-type') || 'application/x-www-form-urlencoded';
+  }
+
+  const response = await fetch(targetUrl, {
+    method: effectiveMethod,
+    headers,
+    body: requestBody,
+  });
+
+  const responseContentType = response.headers.get('content-type');
+  if (responseContentType) {
+    res.setHeader('content-type', responseContentType);
+  }
+
+  const cacheControl = response.headers.get('cache-control');
+  if (cacheControl) {
+    res.setHeader('cache-control', cacheControl);
+  }
+
+  const payload = Buffer.from(await response.arrayBuffer());
+  res.status(response.status).send(payload);
+}
 
 /**
- * Secure MapServer Proxy Controller
- * ────────────────────────────────────────────────────────────────────────────
- * All MapServer queries are routed through this authenticated proxy to:
- * 1. Verify JWT token before forwarding
- * 2. Prevent direct access to MapServer from clients
- * 3. Log all access attempts for security audit
- * 4. Control download/export capabilities
+ * Generic authenticated ArcGIS proxy
+ * /mapserver/service/:serviceKey/<optional-path>?...
  */
+export const proxyArcgisService = async (req, res) => {
+  try {
+    const { serviceKey } = req.params;
+    const config = await getUpstreamRuntimeConfig();
+    const baseUrl = resolveServiceBaseUrl(serviceKey, config);
+
+    if (!baseUrl) {
+      return res.status(404).json({ error: `Unknown map service key: ${serviceKey}` });
+    }
+
+    if (!isAbsoluteHttpUrl(baseUrl)) {
+      return res.status(500).json({ error: `Service URL for ${serviceKey} is not configured` });
+    }
+
+    const pathSuffix = req.path === '/' ? '' : req.path;
+    const queryString = toQueryString(req.query);
+    const upstreamUrl = `${baseUrl.replace(/\/+$/, '')}${pathSuffix}${queryString ? `?${queryString}` : ''}`;
+    const targetUrl = wrapWithDotNetProxyIfNeeded(upstreamUrl, config, { serviceKey });
+
+    return await forwardRequest(req, res, targetUrl, {
+      action: 'MAPSERVER_SERVICE_PROXY',
+      resource: `${serviceKey}${pathSuffix || '/'}`,
+    });
+  } catch (error) {
+    console.error('Map service proxy error:', error);
+
+    const userId = req.user?.sub || req.user?.id || 'unknown';
+    await logSecurityEvent({
+      userId,
+      action: 'MAPSERVER_SERVICE_PROXY_ERROR',
+      error: error.message,
+      ip: req.ip,
+    });
+
+    res.status(500).json({ error: 'Map service proxy request failed' });
+  }
+};
 
 /**
  * Forward authenticated REST query to HSAC MapServer
@@ -23,74 +283,37 @@ const HSAC_ASMX_BASE_PATH = process.env.HSAC_ASMX_BASE_PATH || '/LandOwnerAPI/ge
 export const proxyMapServerQuery = async (req, res) => {
   try {
     const { endpoint = 'query', layerId = '', ...queryParams } = req.body;
-    const userId = req.user?.sub || req.user?.id || 'unknown';
-    const requestPath = `${HSAC_ORIGIN}${HSAC_MAP_SERVICE_PATH}`;
+    const config = await getUpstreamRuntimeConfig();
+    const hsacMain = resolveServiceBaseUrl('hsacMain', config);
 
-    // Security: Prevent export/download operations
-    if (endpoint === 'export') {
-      await logSecurityEvent({
-        userId,
-        action: 'BLOCKED_MAPSERVER_EXPORT',
-        resource: `${requestPath}/${layerId}`,
-        ip: req.ip,
-        reason: 'Export operations are disabled for security',
-      });
-      return res.status(403).json({ 
-        error: 'Export operations are not permitted' 
-      });
+    if (!isAbsoluteHttpUrl(hsacMain)) {
+      return res.status(500).json({ error: 'HSAC MapServer URL is not configured' });
     }
 
-    // Log the access
-    await logSecurityEvent({
-      userId,
-      action: 'MAPSERVER_QUERY',
-      resource: `${requestPath}/${layerId}/${endpoint}`,
-      ip: req.ip,
-      params: {
-        layerId,
-        endpoint,
-        where: queryParams.where || '',
-      },
-    });
-
-    // Build the full URL
-    let targetUrl = `${requestPath}/${layerId}/${endpoint}`;
-    
-    // Add f=json for all requests
     const searchParams = new URLSearchParams({
       f: 'json',
       ...queryParams,
     });
-    
-    targetUrl += `?${searchParams.toString()}`;
 
-    // Forward the request to HSAC MapServer
-    const response = await fetch(targetUrl, {
+    const upstreamUrl = `${hsacMain.replace(/\/+$/, '')}/${layerId}/${endpoint}?${searchParams.toString()}`;
+    const targetUrl = wrapWithDotNetProxyIfNeeded(upstreamUrl, config, { serviceKey: 'hsacMain' });
+    return await forwardRequest(req, res, targetUrl, {
+      action: 'MAPSERVER_QUERY',
+      resource: `${layerId}/${endpoint}`,
       method: 'GET',
-      headers: {
-        'User-Agent': 'EODB-Backend-Proxy/1.0',
-      },
-      timeout: 30000,
     });
-
-    if (!response.ok) {
-      throw new Error(`MapServer returned ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    res.json(data);
   } catch (error) {
-    console.error('MapServer proxy error:', error);
-    
+    console.error('MapServer query proxy error:', error);
+
     const userId = req.user?.sub || req.user?.id || 'unknown';
     await logSecurityEvent({
       userId,
-      action: 'MAPSERVER_ERROR',
+      action: 'MAPSERVER_QUERY_ERROR',
       error: error.message,
       ip: req.ip,
     });
 
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'MapServer request failed',
       message: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
@@ -100,50 +323,33 @@ export const proxyMapServerQuery = async (req, res) => {
 /**
  * Forward authenticated REST identify to HSAC MapServer
  * POST /mapserver/identify
- * Body: { geometry, layerIds, tolerance, ... }
  */
 export const proxyMapServerIdentify = async (req, res) => {
   try {
     const { layerIds = [], ...identifyParams } = req.body;
-    const userId = req.user?.sub || req.user?.id || 'unknown';
-    const requestPath = `${HSAC_ORIGIN}${HSAC_MAP_SERVICE_PATH}`;
+    const config = await getUpstreamRuntimeConfig();
+    const hsacMain = resolveServiceBaseUrl('hsacMain', config);
 
-    // Log the access
-    await logSecurityEvent({
-      userId,
-      action: 'MAPSERVER_IDENTIFY',
-      resource: `${requestPath}/identify`,
-      ip: req.ip,
-      params: {
-        layerIds: layerIds.join(','),
-        tolerance: identifyParams.tolerance || '',
-      },
-    });
+    if (!isAbsoluteHttpUrl(hsacMain)) {
+      return res.status(500).json({ error: 'HSAC MapServer URL is not configured' });
+    }
 
-    const targetUrl = `${requestPath}/identify`;
     const searchParams = new URLSearchParams({
       f: 'json',
       ...identifyParams,
-      ...(layerIds.length && { layerIds: layerIds.join(',') }),
+      ...(layerIds.length ? { layerIds: layerIds.join(',') } : {}),
     });
 
-    const response = await fetch(`${targetUrl}?${searchParams.toString()}`, {
+    const upstreamUrl = `${hsacMain.replace(/\/+$/, '')}/identify?${searchParams.toString()}`;
+    const targetUrl = wrapWithDotNetProxyIfNeeded(upstreamUrl, config, { serviceKey: 'hsacMain' });
+    return await forwardRequest(req, res, targetUrl, {
+      action: 'MAPSERVER_IDENTIFY',
+      resource: 'identify',
       method: 'GET',
-      headers: {
-        'User-Agent': 'EODB-Backend-Proxy/1.0',
-      },
-      timeout: 30000,
     });
-
-    if (!response.ok) {
-      throw new Error(`MapServer returned ${response.status}`);
-    }
-
-    const data = await response.json();
-    res.json(data);
   } catch (error) {
-    console.error('MapServer identify error:', error);
-    
+    console.error('MapServer identify proxy error:', error);
+
     const userId = req.user?.sub || req.user?.id || 'unknown';
     await logSecurityEvent({
       userId,
@@ -152,23 +358,18 @@ export const proxyMapServerIdentify = async (req, res) => {
       ip: req.ip,
     });
 
-    res.status(500).json({ 
-      error: 'Identify request failed' 
-    });
+    res.status(500).json({ error: 'Identify request failed' });
   }
 };
 
 /**
  * Forward authenticated ASMX land-record API call
  * GET /mapserver/land-record/:method
- * Proxies: /LandOwnerAPI/getownername.asmx/:method
  */
 export const proxyLandRecordAPI = async (req, res) => {
   try {
     const { method } = req.params;
-    const userId = req.user?.sub || req.user?.id || 'unknown';
-    
-    // Whitelist allowed methods
+
     const allowedMethods = [
       'GetKhewats',
       'GetJamabandiPeriod',
@@ -178,54 +379,27 @@ export const proxyLandRecordAPI = async (req, res) => {
     ];
 
     if (!allowedMethods.includes(method)) {
-      await logSecurityEvent({
-        userId,
-        action: 'BLOCKED_LAND_RECORD_METHOD',
-        resource: method,
-        ip: req.ip,
-        reason: `Method '${method}' not in whitelist`,
-      });
-      return res.status(403).json({ 
-        error: 'Method not allowed' 
-      });
+      return res.status(403).json({ error: 'Method not allowed' });
     }
 
-    // Log the access
-    await logSecurityEvent({
-      userId,
+    const config = await getUpstreamRuntimeConfig();
+    const hsacOrigin = normalizeOrigin(config.VITE_HSAC_ORIGIN);
+    const asmxPath = normalizePath(config.VITE_ASMX_BASE_PATH);
+
+    if (!isAbsoluteHttpUrl(hsacOrigin) || !asmxPath) {
+      return res.status(500).json({ error: 'ASMX service URL is not configured' });
+    }
+
+    const queryString = toQueryString(req.query);
+    const targetUrl = `${hsacOrigin}${asmxPath}/${method}${queryString ? `?${queryString}` : ''}`;
+
+    return await forwardRequest(req, res, targetUrl, {
       action: 'LAND_RECORD_API_CALL',
-      resource: `${HSAC_ASMX_BASE_PATH}/${method}`,
-      ip: req.ip,
-      params: req.query,
+      resource: `${asmxPath}/${method}`,
     });
-
-    const targetUrl = `${HSAC_ORIGIN}${HSAC_ASMX_BASE_PATH}/${method}`;
-    const queryString = new URLSearchParams(req.query).toString();
-    
-    const response = await fetch(`${targetUrl}?${queryString}`, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'EODB-Backend-Proxy/1.0',
-      },
-      timeout: 30000,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Land Record API returned ${response.status}`);
-    }
-
-    // Return raw response (XML for ASMX)
-    const contentType = response.headers.get('content-type');
-    if (contentType?.includes('application/json')) {
-      const data = await response.json();
-      res.json(data);
-    } else {
-      const text = await response.text();
-      res.type('text/xml').send(text);
-    }
   } catch (error) {
-    console.error('Land Record API error:', error);
-    
+    console.error('Land record API proxy error:', error);
+
     const userId = req.user?.sub || req.user?.id || 'unknown';
     await logSecurityEvent({
       userId,
@@ -234,36 +408,30 @@ export const proxyLandRecordAPI = async (req, res) => {
       ip: req.ip,
     });
 
-    res.status(500).json({ 
-      error: 'Land Record API request failed' 
-    });
+    res.status(500).json({ error: 'Land Record API request failed' });
   }
 };
 
 /**
  * Get MapServer metadata (layers, fields, etc.)
  * GET /mapserver/metadata
- * Returns publicly available metadata about MapServer structure
  */
 export const getMapServerMetadata = async (req, res) => {
   try {
-    const userId = req.user?.sub || req.user?.id || 'unknown';
-    const requestPath = `${HSAC_ORIGIN}${HSAC_MAP_SERVICE_PATH}`;
+    const config = await getUpstreamRuntimeConfig();
+    const hsacMain = resolveServiceBaseUrl('hsacMain', config);
 
-    // Log access
-    await logSecurityEvent({
-      userId,
-      action: 'MAPSERVER_METADATA_REQUEST',
-      resource: requestPath,
-      ip: req.ip,
-    });
+    if (!isAbsoluteHttpUrl(hsacMain)) {
+      return res.status(500).json({ error: 'HSAC MapServer URL is not configured' });
+    }
 
-    const response = await fetch(`${requestPath}?f=json`, {
+    const upstreamUrl = `${hsacMain.replace(/\/+$/, '')}?f=json`;
+    const targetUrl = wrapWithDotNetProxyIfNeeded(upstreamUrl, config, { serviceKey: 'hsacMain' });
+    const response = await fetch(targetUrl, {
       method: 'GET',
       headers: {
         'User-Agent': 'EODB-Backend-Proxy/1.0',
       },
-      timeout: 15000,
     });
 
     if (!response.ok) {
@@ -271,8 +439,7 @@ export const getMapServerMetadata = async (req, res) => {
     }
 
     const data = await response.json();
-    
-    // Filter sensitive information if needed
+
     res.json({
       layers: data.layers || [],
       spatialReference: data.spatialReference || {},
@@ -280,7 +447,7 @@ export const getMapServerMetadata = async (req, res) => {
     });
   } catch (error) {
     console.error('Metadata request error:', error);
-    
+
     const userId = req.user?.sub || req.user?.id || 'unknown';
     await logSecurityEvent({
       userId,
@@ -289,8 +456,6 @@ export const getMapServerMetadata = async (req, res) => {
       ip: req.ip,
     });
 
-    res.status(500).json({ 
-      error: 'Could not retrieve metadata' 
-    });
+    res.status(500).json({ error: 'Could not retrieve metadata' });
   }
 };

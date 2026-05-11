@@ -2,19 +2,22 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-const FRONTEND_CONFIG_KEYS = [
-  "VITE_HSAC_ORIGIN",
-  "VITE_HSAC_DEV_PROXY",
-  "VITE_HSAC_MAP_SERVICE_PATH",
-  "VITE_HSAC_DOTNET_PROXY_URL",
-  "VITE_ASMX_BASE_PATH",
+const FRONTEND_LITERAL_KEYS = [
   "VITE_ARCGIS_API_KEY",
-  "VITE_ARCGIS_GEOCODER_URL",
-  "VITE_HARYANA_BOUNDARY_URL",
-  "VITE_HSACGGM_ASSETS_URL",
-  "VITE_NHAI_ROADS_URL",
-  "VITE_HARYANA_ROADS_URL",
+  "VITE_GA_MEASUREMENT_ID",
 ];
+
+function normalizeBasePath(value) {
+  const raw = `${value || ""}`.trim();
+  if (!raw) return "";
+  const withLeadingSlash = raw.startsWith("/") ? raw : `/${raw}`;
+  return withLeadingSlash.replace(/\/+$/, "");
+}
+
+function withBasePath(basePath, path) {
+  if (!basePath) return path;
+  return `${basePath}${path}`;
+}
 
 // ✅ Create new API URL
 export const createApiUrl = async (req, res) => {
@@ -219,7 +222,7 @@ export const getFrontendRuntimeConfig = async (req, res) => {
   try {
     const entries = await prisma.apiUrl.findMany({
       where: {
-        name: { in: FRONTEND_CONFIG_KEYS },
+        name: { in: FRONTEND_LITERAL_KEYS },
         isActive: true,
       },
       select: {
@@ -228,10 +231,23 @@ export const getFrontendRuntimeConfig = async (req, res) => {
       },
     });
 
-    const config = {};
-    for (const key of FRONTEND_CONFIG_KEYS) {
-      config[key] = process.env[key] || "";
-    }
+    const backendBasePath = normalizeBasePath(process.env.FRONTEND_BACKEND_BASE_PATH);
+    const config = {
+      // Frontend now consumes backend-only proxy URLs.
+      VITE_HSAC_MAIN_URL: withBasePath(backendBasePath, "/mapserver/service/hsacMain"),
+      VITE_HSACGGM_ASSETS_URL: withBasePath(backendBasePath, "/mapserver/service/governmentAssets"),
+      VITE_NHAI_ROADS_URL: withBasePath(backendBasePath, "/mapserver/service/nhaiRoads"),
+      VITE_HARYANA_ROADS_URL: withBasePath(backendBasePath, "/mapserver/service/haryanaRoads"),
+      VITE_HARYANA_BOUNDARY_URL: withBasePath(backendBasePath, "/mapserver/service/haryanaBoundary"),
+      VITE_ARCGIS_GEOCODER_URL: withBasePath(backendBasePath, "/mapserver/service/geocoder"),
+      VITE_ARCGIS_IMAGERY_URL: withBasePath(backendBasePath, "/mapserver/service/imagery"),
+      VITE_ARCGIS_REFERENCE_URL: withBasePath(backendBasePath, "/mapserver/service/reference"),
+      VITE_ARCGIS_TOPO_URL: withBasePath(backendBasePath, "/mapserver/service/topo"),
+      VITE_ARCGIS_STREETS_URL: withBasePath(backendBasePath, "/mapserver/service/streets"),
+      VITE_ASMX_BASE_PATH: withBasePath(backendBasePath, "/mapserver/land-record"),
+      VITE_ARCGIS_API_KEY: process.env.VITE_ARCGIS_API_KEY || "",
+      VITE_GA_MEASUREMENT_ID: process.env.VITE_GA_MEASUREMENT_ID || "",
+    };
 
     for (const item of entries) {
       config[item.name] = item.url;

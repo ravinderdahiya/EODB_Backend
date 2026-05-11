@@ -17,7 +17,12 @@ export const generalLimiter = rateLimit({
   message: "Too many requests, please try again later",
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === "/", // Skip for root path
+  // Skip root and high-frequency ArcGIS layer traffic that can exceed 100 requests quickly.
+  skip: (req) =>
+    req.path === "/" ||
+    req.method === "OPTIONS" ||
+    req.path.startsWith("/mapserver/service/") ||
+    req.path === "/mapserver/metadata",
   keyGenerator: (req) => {
     // Use IP as key
     return ipKeyGenerator(req);

@@ -4,36 +4,40 @@ import {
   proxyMapServerQuery,
   proxyMapServerIdentify,
   proxyLandRecordAPI,
+  proxyArcgisService,
   getMapServerMetadata,
 } from './mapserver.controller.js';
 
 const router = express.Router();
 
 /**
- * MapServer Secure Proxy Routes
+ * MapServer Proxy Routes
  * ────────────────────────────────────────────────────────────────────────────
- * All routes require JWT authentication. These endpoints proxy to HSAC MapServer
- * with token verification, access logging, and export prevention.
+ * Public read-only service routes are exposed for ArcGIS layer rendering.
+ * Sensitive query/identify/land-record routes remain JWT-protected.
  */
 
-// ✅ All MapServer routes require authentication
-router.use(authMiddleware);
-
-// GET/POST MapServer query endpoint
-// Forwards to: /server/rest/services/EODB/EODB_HR23/MapServer/{layerId}/query
-router.post('/query', proxyMapServerQuery);
-
-// GET/POST MapServer identify endpoint
-// Forwards to: /server/rest/services/EODB/EODB_HR23/MapServer/identify
-router.post('/identify', proxyMapServerIdentify);
-
-// Land Record ASMX API
-// GET /mapserver/land-record/GetKhewats?...
-// Forwards to: /LandOwnerAPI/getownername.asmx/GetKhewats?...
-router.get('/land-record/:method', proxyLandRecordAPI);
+// Public ArcGIS service proxy for map/basemap/cadastral layer rendering.
+// Example:
+//   /mapserver/service/hsacMain
+//   /mapserver/service/hsacMain/26/query?f=json
+//   /mapserver/service/geocoder/findAddressCandidates?f=json...
+router.use('/service/:serviceKey', proxyArcgisService);
 
 // Get MapServer metadata (layers, fields, spatial reference)
 // GET /mapserver/metadata
 router.get('/metadata', getMapServerMetadata);
+
+// Protected endpoints below this point.
+router.use(authMiddleware);
+
+// POST /mapserver/query
+router.post('/query', proxyMapServerQuery);
+
+// POST /mapserver/identify
+router.post('/identify', proxyMapServerIdentify);
+
+// GET /mapserver/land-record/:method
+router.get('/land-record/:method', proxyLandRecordAPI);
 
 export default router;
