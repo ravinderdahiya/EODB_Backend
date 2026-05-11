@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import userRoutes from "./user/user.routes.js";
 import otpRoutes from "./otp/otp.routes.js";
 import apiUrlRoutes from "./api-url/api-url.routes.js";
+import mapserverRoutes from "./mapserver/mapserver.routes.js";
 import { trackingMiddleware } from "./middleware/tracking.middleware.js";
 import {
   securityHeaders,
@@ -71,6 +72,7 @@ app.use(session({
 app.use("/user", userRoutes);
 app.use("/otp", otpRoutes);
 app.use("/api-url", apiUrlRoutes);
+app.use("/mapserver", mapserverRoutes);
 
 // ✅ Response Tracking Middleware (must be after routes)
 app.use((req, res, next) => {
