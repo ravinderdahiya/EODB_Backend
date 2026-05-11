@@ -7,6 +7,7 @@ import {
   deleteApiUrl,
   toggleApiUrlStatus,
   getCategories,
+  getFrontendRuntimeConfig,
 } from "./api-url.controller.js";
 import { authMiddleware } from "../middleware/auth.middleware.js";
 
@@ -14,6 +15,7 @@ const router = Router();
 
 // ✅ Public routes
 router.get("/categories", getCategories);
+router.get("/frontend-config", getFrontendRuntimeConfig);
 
 // ✅ Protected routes (require authentication)
 router.post("/", authMiddleware, createApiUrl);

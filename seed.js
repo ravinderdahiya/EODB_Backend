@@ -1,8 +1,112 @@
 import prisma from "./src/config/db.js";
 import bcrypt from "bcrypt";
 
+async function upsertFrontendRuntimeUrls() {
+  const frontendRuntimeUrls = [
+    {
+      name: "VITE_HSAC_ORIGIN",
+      url: "https://hsac.org.in",
+      description: "HSAC origin host used by frontend proxy and map services",
+      category: "frontend_runtime_config",
+      isActive: true,
+    },
+    {
+      name: "VITE_HSAC_DEV_PROXY",
+      url: "/hsac",
+      description: "Vite dev proxy prefix rewriting to HSAC origin",
+      category: "frontend_runtime_config",
+      isActive: true,
+    },
+    {
+      name: "VITE_HSAC_MAP_SERVICE_PATH",
+      url: "/server/rest/services/EODB/EODB_HR23/MapServer",
+      description: "MapServer service path appended to HSAC origin",
+      category: "frontend_runtime_config",
+      isActive: true,
+    },
+    {
+      name: "VITE_HSAC_DOTNET_PROXY_URL",
+      url: "http://hsac.org.in/DotNet/proxy.ashx",
+      description: "HSAC DotNet proxy for ArcGIS authenticated requests",
+      category: "frontend_runtime_config",
+      isActive: true,
+    },
+    {
+      name: "VITE_ASMX_BASE_PATH",
+      url: "/LandOwnerAPI/getownername.asmx",
+      description: "Base ASMX path for land-record services",
+      category: "frontend_runtime_config",
+      isActive: true,
+    },
+    {
+      name: "VITE_ARCGIS_API_KEY",
+      url: "your_arcgis_api_key_here",
+      description: "ArcGIS API key (replace with real key in production)",
+      category: "frontend_runtime_config",
+      isActive: false,
+    },
+    {
+      name: "VITE_ARCGIS_GEOCODER_URL",
+      url: "https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer",
+      description: "ArcGIS world geocoder endpoint",
+      category: "frontend_runtime_config",
+      isActive: true,
+    },
+    {
+      name: "VITE_HARYANA_BOUNDARY_URL",
+      url: "https://services1.arcgis.com/qN3V93cYGMKQCOxL/arcgis/rest/services/HARYANA_BOUNDARY/FeatureServer/0",
+      description: "Haryana boundary feature service",
+      category: "frontend_runtime_config",
+      isActive: true,
+    },
+    {
+      name: "VITE_HSACGGM_ASSETS_URL",
+      url: "https://hsacggm.in/server/rest/services/Onemap_Haryana/Government_Assets/MapServer",
+      description: "HSACGGM government assets map service",
+      category: "frontend_runtime_config",
+      isActive: true,
+    },
+    {
+      name: "VITE_NHAI_ROADS_URL",
+      url: "https://onemapggm.gmda.gov.in/server/rest/services/NHAI_All/MapServer",
+      description: "NHAI roads map service",
+      category: "frontend_runtime_config",
+      isActive: true,
+    },
+    {
+      name: "VITE_HARYANA_ROADS_URL",
+      url: "https://hsacggm.in/server/rest/services/Onemap_Haryana/Haryana_Roads/MapServer",
+      description: "Haryana roads map service",
+      category: "frontend_runtime_config",
+      isActive: true,
+    },
+  ];
+
+  for (const entry of frontendRuntimeUrls) {
+    const existing = await prisma.apiUrl.findFirst({
+      where: { name: entry.name },
+    });
+
+    if (existing) {
+      await prisma.apiUrl.update({
+        where: { id: existing.id },
+        data: {
+          url: entry.url,
+          description: entry.description,
+          category: entry.category,
+          isActive: entry.isActive,
+        },
+      });
+      console.log(`Updated config URL: ${entry.name}`);
+    } else {
+      await prisma.apiUrl.create({ data: entry });
+      console.log(`Created config URL: ${entry.name}`);
+    }
+  }
+}
+
 async function main() {
-  console.log("🌱 Starting seed...");
+  console.log("Starting seed...");
 
   const adminEmail = "admin@harsac.gov.in";
   const adminPassword = "admin123";
@@ -70,7 +174,8 @@ async function main() {
     }
   }
 
-  console.log("🌱 Seed completed!");
+  await upsertFrontendRuntimeUrls();
+  console.log("Seed completed");
 }
 
 main()

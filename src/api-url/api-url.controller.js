@@ -2,6 +2,20 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+const FRONTEND_CONFIG_KEYS = [
+  "VITE_HSAC_ORIGIN",
+  "VITE_HSAC_DEV_PROXY",
+  "VITE_HSAC_MAP_SERVICE_PATH",
+  "VITE_HSAC_DOTNET_PROXY_URL",
+  "VITE_ASMX_BASE_PATH",
+  "VITE_ARCGIS_API_KEY",
+  "VITE_ARCGIS_GEOCODER_URL",
+  "VITE_HARYANA_BOUNDARY_URL",
+  "VITE_HSACGGM_ASSETS_URL",
+  "VITE_NHAI_ROADS_URL",
+  "VITE_HARYANA_ROADS_URL",
+];
+
 // ✅ Create new API URL
 export const createApiUrl = async (req, res) => {
   try {
@@ -198,5 +212,37 @@ export const getCategories = async (req, res) => {
   } catch (error) {
     console.error("❌ Error fetching categories:", error.message);
     res.status(500).json({ error: "Failed to fetch categories" });
+  }
+};
+
+export const getFrontendRuntimeConfig = async (req, res) => {
+  try {
+    const entries = await prisma.apiUrl.findMany({
+      where: {
+        name: { in: FRONTEND_CONFIG_KEYS },
+        isActive: true,
+      },
+      select: {
+        name: true,
+        url: true,
+      },
+    });
+
+    const config = {};
+    for (const key of FRONTEND_CONFIG_KEYS) {
+      config[key] = process.env[key] || "";
+    }
+
+    for (const item of entries) {
+      config[item.name] = item.url;
+    }
+
+    res.json({
+      message: "Frontend runtime config fetched successfully",
+      data: config,
+    });
+  } catch (error) {
+    console.error("Error fetching frontend runtime config:", error.message);
+    res.status(500).json({ error: "Failed to fetch frontend runtime config" });
   }
 };

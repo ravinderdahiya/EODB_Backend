@@ -44,8 +44,16 @@ export const trackingMiddleware = async (req, res, next) => {
       console.error("❌ Failed to save location log:", err.message);
     });
 
-    // ✅ Track API usage in Google Analytics
-    analyticsService.trackApiUsage(req.path, req.method, null, req.user?.id);
+    // ✅ Track API usage in Google Analytics after response completes
+    // so statusCode is accurate (avoids status_null events).
+    res.on("finish", () => {
+      analyticsService.trackApiUsage(
+        req.path,
+        req.method,
+        res.statusCode,
+        req.user?.id,
+      );
+    });
 
     next();
   } catch (error) {
