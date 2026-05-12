@@ -1,11 +1,12 @@
 import { Router } from "express"
-import { signup, login, logout, getMe, adminLogin, getLoginLogs, getTokenInfo, getAdminUsers } from "./user.controller.js"
+import { signup, login, logout, googleLogin, getMe, adminLogin, getLoginLogs, getTokenInfo, getAdminUsers } from "./user.controller.js"
 import { authMiddleware } from "../middleware/auth.middleware.js"
 
 const router = Router()
 
 router.post("/signup", signup)
 router.post("/login", login)
+router.post("/google-login", googleLogin)
 router.post("/admin-login", adminLogin)
 router.post("/logout", logout);
 router.get("/me", getMe);

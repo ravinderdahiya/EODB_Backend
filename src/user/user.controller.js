@@ -1,12 +1,49 @@
 import prisma from "../config/db.js"
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
+import fetch from "node-fetch"
 
 
 // Get IP 
 const getIP = (req) => {
   return req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 };
+
+const verifyGoogleIdToken = async (idToken) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    throw new Error("Google Client ID is not configured on the server");
+  }
+
+  const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Invalid Google token: ${body}`);
+  }
+
+  const payload = await response.json();
+
+  if (!payload.email || payload.email_verified === false || payload.email_verified === "false") {
+    throw new Error("Google account is not verified");
+  }
+
+  if (payload.aud !== clientId) {
+    throw new Error("Google token audience mismatch");
+  }
+
+  if (!["accounts.google.com", "https://accounts.google.com"].includes(payload.iss)) {
+    throw new Error("Invalid Google token issuer");
+  }
+
+  return payload;
+};
+
+const createGoogleUserMobile = (sub) => {
+  return `google:${sub}`;
+};
+
 // SIGNUP
 export const signup = async (req, res) => {
   try {
@@ -112,6 +149,76 @@ export const login = async (req, res) => {
     res.status(500).json({ message: "Internal server error" })
   }
 }
+
+export const googleLogin = async (req, res) => {
+  try {
+    const { credential } = req.body;
+
+    if (!credential) {
+      return res.status(400).json({ message: "Google credential is required" });
+    }
+
+    const googlePayload = await verifyGoogleIdToken(credential);
+    const { email, name, sub } = googlePayload;
+
+    let user = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (!user) {
+      const randomPassword = await bcrypt.hash(`${Date.now()}-${Math.random()}`, 10);
+      user = await prisma.user.create({
+        data: {
+          fullname: name || email.split("@")[0],
+          email,
+          password: randomPassword,
+          mobile: createGoogleUserMobile(sub)
+        }
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role
+      },
+      process.env.JWT_SECRET || process.env.AUTH_SECRET || "defaultsecret",
+      { expiresIn: "1d" }
+    );
+
+    const ip = getIP(req);
+
+    req.session.user = {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      ip: ip
+    };
+
+    res.cookie("auth_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
+      path: "/",
+    });
+
+    res.json({
+      message: "Google login success",
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullname: user.fullname,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error("Google Login Error:", error);
+    res.status(500).json({ message: error.message || "Google login failed" });
+  }
+};
 
 export const logout = (req, res) => {
   // Clear session
