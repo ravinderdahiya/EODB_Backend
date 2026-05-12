@@ -21,5 +21,4 @@ router.get("/profile", authMiddleware, (req, res) => {
     user: req.user
   })
 })
-
 export default router
