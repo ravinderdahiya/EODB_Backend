@@ -8,8 +8,8 @@ router.post("/signup", signup)
 router.post("/login", login)
 router.post("/google-login", googleLogin)
 router.post("/admin-login", adminLogin)
-router.post("/logout", logout);
-router.get("/me", getMe);
+router.post("/logout", authMiddleware, logout);
+router.get("/me", authMiddleware, getMe);
 router.get("/login-logs", authMiddleware, getLoginLogs);
 router.get("/token-info", authMiddleware, getTokenInfo);
 router.get("/admin-users", authMiddleware, getAdminUsers);

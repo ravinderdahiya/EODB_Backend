@@ -7,6 +7,26 @@ const getCookieToken = (req) => {
   return match ? decodeURIComponent(match[1]) : null;
 };
 
+const PUBLIC_ROUTE_RULES = [
+  { method: "POST", path: "/user/signup" },
+  { method: "POST", path: "/user/login" },
+  { method: "POST", path: "/user/admin-login" },
+  { method: "POST", path: "/user/google-login" },
+  { method: "POST", path: "/otp/send-otp" },
+  { method: "POST", path: "/otp/resend-otp" },
+  { method: "POST", path: "/otp/verify-otp" },
+  { method: "GET", path: "/health" },
+];
+
+function isPublicRoute(req) {
+  const method = (req.method || "").toUpperCase();
+  const path = req.path || req.originalUrl || "";
+
+  return PUBLIC_ROUTE_RULES.some((rule) => (
+    rule.method === method && path === rule.path
+  ));
+}
+
 export const authMiddleware = (req, res, next) => {
   // Authorization header takes priority; cookie works as fallback
   const token = req.headers.authorization?.split(" ")[1] || getCookieToken(req);
@@ -22,5 +42,17 @@ export const authMiddleware = (req, res, next) => {
   } catch {
     res.status(401).json({ message: "Invalid or expired token" });
   }
+};
+
+export const requireAuthUnlessPublic = (req, res, next) => {
+  if (req.method === "OPTIONS") {
+    return next();
+  }
+
+  if (isPublicRoute(req)) {
+    return next();
+  }
+
+  return authMiddleware(req, res, next);
 };
 

@@ -10,26 +10,14 @@ import {
 
 const router = express.Router();
 
-/**
- * MapServer Proxy Routes
- * ────────────────────────────────────────────────────────────────────────────
- * Public read-only service routes are exposed for ArcGIS layer rendering.
- * Sensitive query/identify/land-record routes remain JWT-protected.
- */
+// All mapserver endpoints are protected.
+router.use(authMiddleware);
 
-// Public ArcGIS service proxy for map/basemap/cadastral layer rendering.
-// Example:
-//   /mapserver/service/hsacMain
-//   /mapserver/service/hsacMain/26/query?f=json
-//   /mapserver/service/geocoder/findAddressCandidates?f=json...
+// ArcGIS service proxy for map/basemap/cadastral rendering.
 router.use('/service/:serviceKey', proxyArcgisService);
 
-// Get MapServer metadata (layers, fields, spatial reference)
-// GET /mapserver/metadata
+// MapServer metadata (layers, fields, spatial reference)
 router.get('/metadata', getMapServerMetadata);
-
-// Protected endpoints below this point.
-router.use(authMiddleware);
 
 // POST /mapserver/query
 router.post('/query', proxyMapServerQuery);

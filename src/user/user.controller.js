@@ -413,6 +413,13 @@ export const getLoginLogs = async (req, res) => {
 export const getMe = (req, res) => {
   if (req.session.user) {
     res.json(req.session.user);
+  } else if (req.user) {
+    res.json({
+      id: req.user.id,
+      email: req.user.email || null,
+      role: req.user.role || null,
+      mobile: req.user.mobile || null,
+    });
   } else {
     res.status(401).json({ message: "Not logged in" });
   }

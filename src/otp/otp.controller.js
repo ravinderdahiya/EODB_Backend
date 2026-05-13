@@ -250,6 +250,7 @@ export const verifyOtp = async(req, res) => {
 
         res.json({
             message: "OTP verified successfully",
+            token,
             session: session?.id,
             user: {
                 id: user.id,

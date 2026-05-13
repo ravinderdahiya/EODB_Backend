@@ -8,6 +8,7 @@ import otpRoutes from "./otp/otp.routes.js";
 import apiUrlRoutes from "./api-url/api-url.routes.js";
 import mapserverRoutes from "./mapserver/mapserver.routes.js";
 import { trackingMiddleware } from "./middleware/tracking.middleware.js";
+import { requireAuthUnlessPublic } from "./middleware/auth.middleware.js";
 import {
   securityHeaders,
   generalLimiter,
@@ -67,6 +68,9 @@ app.use(session({
     sameSite: "strict",
   }
 }));
+
+// ✅ Secure-by-default: every API needs auth token unless explicitly whitelisted.
+app.use(requireAuthUnlessPublic);
 
 // ✅ Routes
 app.use("/user", userRoutes);

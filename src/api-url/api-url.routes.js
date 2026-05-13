@@ -13,11 +13,9 @@ import { authMiddleware } from "../middleware/auth.middleware.js";
 
 const router = Router();
 
-// ✅ Public routes
-router.get("/categories", getCategories);
-router.get("/frontend-config", getFrontendRuntimeConfig);
-
 // ✅ Protected routes (require authentication)
+router.get("/categories", authMiddleware, getCategories);
+router.get("/frontend-config", authMiddleware, getFrontendRuntimeConfig);
 router.post("/", authMiddleware, createApiUrl);
 router.get("/", authMiddleware, getAllApiUrls);
 router.get("/:id", authMiddleware, getApiUrlById);
