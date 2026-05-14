@@ -1,5 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
+import prisma from "./config/db.js";
+import { ensureRuntimeConfigEntries } from "./api-url/runtime-config.service.js";
 
 // ── Startup secret validation — crash early rather than run insecure ──────────
 const REQUIRED_ENV = {
@@ -33,6 +35,18 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 8080;
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+async function startServer() {
+  try {
+    const seeded = await ensureRuntimeConfigEntries(prisma);
+    console.log(`Runtime config seed check complete (created: ${seeded.created}/${seeded.total})`);
+  } catch (error) {
+    console.error("FATAL: could not ensure runtime config entries in api_urls:", error.message);
+    process.exit(1);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+startServer();

@@ -1,51 +1,10 @@
 import fetch from 'node-fetch';
 import prisma from '../config/db.js';
 import { logSecurityEvent } from '../services/auditLogService.js';
-
-const UPSTREAM_CONFIG_KEYS = [
-  'VITE_HSAC_ORIGIN',
-  'VITE_HSAC_MAP_SERVICE_PATH',
-  'VITE_HSAC_DOTNET_PROXY_URL',
-  'VITE_ASMX_BASE_PATH',
-  'VITE_ARCGIS_GEOCODER_URL',
-  'VITE_HARYANA_BOUNDARY_URL',
-  'VITE_HSACGGM_ASSETS_URL',
-  'VITE_NHAI_ROADS_URL',
-  'VITE_HARYANA_ROADS_URL',
-  'VITE_ARCGIS_IMAGERY_URL',
-  'VITE_ARCGIS_REFERENCE_URL',
-  'VITE_ARCGIS_TOPO_URL',
-  'VITE_ARCGIS_STREETS_URL',
-];
-
-const DEFAULT_UPSTREAM_CONFIG = {
-  VITE_HSAC_ORIGIN: process.env.HSAC_ORIGIN || 'https://hsac.org.in',
-  VITE_HSAC_MAP_SERVICE_PATH:
-    process.env.HSAC_MAP_SERVICE_PATH || '/server/rest/services/EODB/EODB_HR23/MapServer',
-  VITE_HSAC_DOTNET_PROXY_URL:
-    process.env.HSAC_DOTNET_PROXY_URL ||
-    process.env.VITE_HSAC_DOTNET_PROXY_URL ||
-    'https://hsac.org.in/DotNet/proxy.ashx',
-  VITE_ASMX_BASE_PATH: process.env.HSAC_ASMX_BASE_PATH || '/LandOwnerAPI/getownername.asmx',
-  VITE_ARCGIS_GEOCODER_URL:
-    'https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer',
-  VITE_HARYANA_BOUNDARY_URL:
-    'https://services1.arcgis.com/qN3V93cYGMKQCOxL/arcgis/rest/services/HARYANA_BOUNDARY/FeatureServer/0',
-  VITE_HSACGGM_ASSETS_URL:
-    'https://hsacggm.in/server/rest/services/Onemap_Haryana/Government_Assets/MapServer',
-  VITE_NHAI_ROADS_URL:
-    'https://onemapggm.gmda.gov.in/server/rest/services/NHAI_All/MapServer',
-  VITE_HARYANA_ROADS_URL:
-    'https://hsacggm.in/server/rest/services/Onemap_Haryana/Haryana_Roads/MapServer',
-  VITE_ARCGIS_IMAGERY_URL:
-    'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
-  VITE_ARCGIS_REFERENCE_URL:
-    'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer',
-  VITE_ARCGIS_TOPO_URL:
-    'https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer',
-  VITE_ARCGIS_STREETS_URL:
-    'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer',
-};
+import {
+  UPSTREAM_CONFIG_KEYS,
+  ensureRuntimeConfigEntries,
+} from '../api-url/runtime-config.service.js';
 
 function normalizeOrigin(origin) {
   return `${origin || ''}`.trim().replace(/\/+$/, '');
@@ -107,7 +66,7 @@ function wrapWithDotNetProxyIfNeeded(targetUrl, config, { serviceKey } = {}) {
 }
 
 async function getUpstreamRuntimeConfig() {
-  const config = { ...DEFAULT_UPSTREAM_CONFIG };
+  await ensureRuntimeConfigEntries(prisma);
 
   const entries = await prisma.apiUrl.findMany({
     where: {
@@ -120,10 +79,16 @@ async function getUpstreamRuntimeConfig() {
     },
   });
 
+  const config = {};
   for (const item of entries) {
     if (typeof item.url === 'string' && item.url.trim()) {
       config[item.name] = item.url.trim();
     }
+  }
+
+  const missingKeys = UPSTREAM_CONFIG_KEYS.filter((key) => !config[key]);
+  if (missingKeys.length) {
+    throw new Error(`Missing active upstream config keys: ${missingKeys.join(', ')}`);
   }
 
   return config;

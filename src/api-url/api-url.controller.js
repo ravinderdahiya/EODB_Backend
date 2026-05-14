@@ -1,11 +1,10 @@
 import { PrismaClient } from "@prisma/client";
+import {
+  FRONTEND_LITERAL_KEYS,
+  ensureRuntimeConfigEntries,
+} from "./runtime-config.service.js";
 
 const prisma = new PrismaClient();
-
-const FRONTEND_LITERAL_KEYS = [
-  "VITE_ARCGIS_API_KEY",
-  "VITE_GA_MEASUREMENT_ID",
-];
 
 function normalizeBasePath(value) {
   const raw = `${value || ""}`.trim();
@@ -220,6 +219,8 @@ export const getCategories = async (req, res) => {
 
 export const getFrontendRuntimeConfig = async (req, res) => {
   try {
+    await ensureRuntimeConfigEntries(prisma);
+
     const entries = await prisma.apiUrl.findMany({
       where: {
         name: { in: FRONTEND_LITERAL_KEYS },
