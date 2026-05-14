@@ -1,5 +1,13 @@
 # Node modules
 node_modules/
+ node_modules/.prisma/client/edge.js
+        node_modules/.prisma/client/index-browser.js
+        node_modules/.prisma/client/index.d.ts
+        node_modules/.prisma/client/index.js
+        node_modules/.prisma/client/package.json
+        node_modules/.prisma/client/schema.prisma
+        node_modules/.prisma/client/wasm.js
+        package-lock.json
 
 # Environment variables
 .env
