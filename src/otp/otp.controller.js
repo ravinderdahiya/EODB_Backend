@@ -95,7 +95,15 @@ export const sendOtp = async(req, res) => {
         }
     } catch (error) {
         console.error("Send OTP Error:", error.message);
-        res.status(500).json({ message: "Server error" });
+        const isSchemaIssue = error?.code === "P2021" || error?.code === "P2022";
+        const debugPayload = process.env.NODE_ENV !== "production"
+            ? { debug: { code: error?.code, message: error?.message } }
+            : {};
+        res.status(500).json({
+            message: "Server error",
+            ...(isSchemaIssue ? { hint: "Database schema mismatch. Run: npx prisma db push on deployed backend." } : {}),
+            ...debugPayload,
+        });
     }
 };
 
