@@ -15,6 +15,7 @@ const PUBLIC_ROUTE_RULES = [
   { method: "POST", path: "/otp/send-otp" },
   { method: "POST", path: "/otp/resend-otp" },
   { method: "POST", path: "/otp/verify-otp" },
+  { method: "GET", path: "/api-url/frontend-config" },
   { method: "GET", path: "/health" },
 ];
 

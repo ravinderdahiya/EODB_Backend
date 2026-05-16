@@ -18,6 +18,45 @@ function withBasePath(basePath, path) {
   return `${basePath}${path}`;
 }
 
+function extractBasePathFromAbsoluteUrl(value) {
+  const raw = `${value || ""}`.trim();
+  if (!raw) return "";
+
+  try {
+    const parsed = new URL(raw);
+    return normalizeBasePath(parsed.pathname);
+  } catch {
+    return normalizeBasePath(raw);
+  }
+}
+
+function inferBackendBasePathFromRequest(req) {
+  const endpointSuffix = "/api-url/frontend-config";
+  const originalPath = `${req.originalUrl || ""}`.split("?")[0];
+
+  if (originalPath.endsWith(endpointSuffix)) {
+    const prefix = originalPath.slice(0, -endpointSuffix.length);
+    return normalizeBasePath(prefix);
+  }
+
+  return "";
+}
+
+function resolveFrontendBackendBasePath(req) {
+  const fromEnv = normalizeBasePath(process.env.FRONTEND_BACKEND_BASE_PATH);
+  if (fromEnv) return fromEnv;
+
+  const fromProxy = normalizeBasePath(
+    req.get("x-forwarded-prefix") || req.get("x-original-prefix"),
+  );
+  if (fromProxy) return fromProxy;
+
+  const fromApiBase = extractBasePathFromAbsoluteUrl(process.env.VITE_SERVER_BASE_URL);
+  if (fromApiBase) return fromApiBase;
+
+  return inferBackendBasePathFromRequest(req);
+}
+
 // ✅ Create new API URL
 export const createApiUrl = async (req, res) => {
   try {
@@ -232,7 +271,7 @@ export const getFrontendRuntimeConfig = async (req, res) => {
       },
     });
 
-    const backendBasePath = normalizeBasePath(process.env.FRONTEND_BACKEND_BASE_PATH);
+    const backendBasePath = resolveFrontendBackendBasePath(req);
     const config = {
       // Frontend now consumes backend-only proxy URLs.
       VITE_HSAC_MAIN_URL: withBasePath(backendBasePath, "/mapserver/service/hsacMain"),

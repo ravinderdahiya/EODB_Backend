@@ -15,7 +15,7 @@ const router = Router();
 
 // ✅ Protected routes (require authentication)
 router.get("/categories", authMiddleware, getCategories);
-router.get("/frontend-config", authMiddleware, getFrontendRuntimeConfig);
+router.get("/frontend-config", getFrontendRuntimeConfig);
 router.post("/", authMiddleware, createApiUrl);
 router.get("/", authMiddleware, getAllApiUrls);
 router.get("/:id", authMiddleware, getApiUrlById);

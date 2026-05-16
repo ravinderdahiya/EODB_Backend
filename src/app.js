@@ -87,4 +87,16 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Centralized error handler to avoid generic 500s for known cases (like CORS)
+app.use((err, req, res, next) => {
+  if (!err) return next();
+
+  if (err.code === "CORS_ORIGIN_DENIED") {
+    return res.status(err.status || 403).json({ message: "CORS origin not allowed" });
+  }
+
+  console.error("Unhandled application error:", err.message);
+  return res.status(err.status || 500).json({ message: "Internal server error" });
+});
+
 export default app;

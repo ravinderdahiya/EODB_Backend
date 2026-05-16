@@ -141,25 +141,41 @@ export const requestLogger = (req, res, next) => {
 };
 
 // CORS configuration — origins driven by env var
-// In production: set ALLOWED_ORIGINS="https://hsac.org.in" in .env
+// In production: set ALLOWED_ORIGINS="https://hsac.org.in,https://www.hsac.org.in" in .env
 // In development: localhost origins allowed automatically
+const normalizeOrigin = (value) => String(value || "").trim().replace(/\/+$/, "");
+
+const defaultProductionOrigins = [
+  "https://hsac.org.in",
+  "https://www.hsac.org.in",
+];
+
 const productionOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
-  : [];
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => normalizeOrigin(o))
+  : defaultProductionOrigins;
 
 const devOrigins =
   process.env.NODE_ENV !== "production"
     ? ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"]
     : [];
 
-const allowedOrigins = new Set([...productionOrigins, ...devOrigins]);
+const allowedOrigins = new Set(
+  [...productionOrigins, ...devOrigins].map((o) => normalizeOrigin(o)).filter(Boolean)
+);
 
 export const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (server-to-server, curl, Postman)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.has(origin)) return callback(null, true);
-    callback(new Error(`CORS blocked: origin ${origin} not allowed`));
+    const normalizedOrigin = normalizeOrigin(origin);
+
+    if (allowedOrigins.has(normalizedOrigin)) return callback(null, true);
+
+    console.warn(`CORS blocked: origin ${origin} not allowed`);
+    const corsError = new Error(`CORS blocked: origin ${origin} not allowed`);
+    corsError.status = 403;
+    corsError.code = "CORS_ORIGIN_DENIED";
+    callback(corsError);
   },
   credentials: true,
   optionsSuccessStatus: 200,
