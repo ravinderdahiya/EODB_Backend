@@ -12,6 +12,7 @@ export const UPSTREAM_CONFIG_KEYS = [
   "VITE_ARCGIS_REFERENCE_URL",
   "VITE_ARCGIS_TOPO_URL",
   "VITE_ARCGIS_STREETS_URL",
+  "VITE_OWNER_SEARCH_UPSTREAM_URL",
 ];
 
 export const FRONTEND_LITERAL_KEYS = [
@@ -49,6 +50,10 @@ function getUpstreamConfigDefaults() {
       "https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer",
     VITE_ARCGIS_STREETS_URL:
       "https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer",
+    VITE_OWNER_SEARCH_UPSTREAM_URL:
+      process.env.OWNER_API_ENDPOINT ||
+      process.env.VITE_OWNER_SEARCH_UPSTREAM_URL ||
+      "https://hsac.org.in/emissions/extract_land_record",
   };
 }
 

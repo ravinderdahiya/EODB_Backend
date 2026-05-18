@@ -8,6 +8,7 @@ import {
   toggleApiUrlStatus,
   getCategories,
   getFrontendRuntimeConfig,
+  proxyOwnerSearch,
 } from "./api-url.controller.js";
 import { authMiddleware } from "../middleware/auth.middleware.js";
 
@@ -16,6 +17,7 @@ const router = Router();
 // ✅ Protected routes (require authentication)
 router.get("/categories", authMiddleware, getCategories);
 router.get("/frontend-config", getFrontendRuntimeConfig);
+router.get("/owner-search", proxyOwnerSearch);
 router.post("/", authMiddleware, createApiUrl);
 router.get("/", authMiddleware, getAllApiUrls);
 router.get("/:id", authMiddleware, getApiUrlById);

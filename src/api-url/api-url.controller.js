@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import fetch from "node-fetch";
 import {
   FRONTEND_LITERAL_KEYS,
   ensureRuntimeConfigEntries,
@@ -285,6 +286,7 @@ export const getFrontendRuntimeConfig = async (req, res) => {
       VITE_ARCGIS_TOPO_URL: withBasePath(backendBasePath, "/mapserver/service/topo"),
       VITE_ARCGIS_STREETS_URL: withBasePath(backendBasePath, "/mapserver/service/streets"),
       VITE_ASMX_BASE_PATH: withBasePath(backendBasePath, "/mapserver/land-record"),
+      VITE_OWNER_API_ENDPOINT: withBasePath(backendBasePath, "/api-url/owner-search"),
       VITE_ARCGIS_API_KEY: process.env.VITE_ARCGIS_API_KEY || "",
       VITE_GA_MEASUREMENT_ID: process.env.VITE_GA_MEASUREMENT_ID || "",
     };
@@ -300,5 +302,86 @@ export const getFrontendRuntimeConfig = async (req, res) => {
   } catch (error) {
     console.error("Error fetching frontend runtime config:", error.message);
     res.status(500).json({ error: "Failed to fetch frontend runtime config" });
+  }
+};
+
+export const proxyOwnerSearch = async (req, res) => {
+  try {
+    const rawQuery = `${req.query?.query || ""}`.trim();
+    if (!rawQuery) {
+      return res.status(400).json({ error: "query is required" });
+    }
+
+    await ensureRuntimeConfigEntries(prisma);
+    const upstreamEntry = await prisma.apiUrl.findFirst({
+      where: {
+        name: "VITE_OWNER_SEARCH_UPSTREAM_URL",
+        isActive: true,
+      },
+      select: { url: true },
+    });
+
+    const upstreamUrl = `${upstreamEntry?.url || ""}`.trim();
+    if (!upstreamUrl) {
+      return res.status(500).json({ error: "Owner search upstream URL is not configured" });
+    }
+
+    const attempts = [
+      {
+        url: upstreamUrl,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/plain, */*",
+        },
+        body: JSON.stringify({ speech: rawQuery }),
+      },
+      {
+        url: upstreamUrl,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json, text/plain, */*",
+        },
+        body: `speech=${encodeURIComponent(rawQuery)}`,
+      },
+      {
+        url: `${upstreamUrl}?query=${encodeURIComponent(rawQuery)}`,
+        method: "GET",
+        headers: {
+          Accept: "application/json, text/plain, */*",
+        },
+      },
+    ];
+
+    let lastStatus = 502;
+    let lastMessage = "Owner search upstream request failed";
+    for (const attempt of attempts) {
+      try {
+        const upstreamResponse = await fetch(attempt.url, {
+          method: attempt.method,
+          headers: attempt.headers,
+          body: attempt.body,
+        });
+
+        const payload = Buffer.from(await upstreamResponse.arrayBuffer());
+        const contentType = upstreamResponse.headers.get("content-type") || "application/json";
+        if (!upstreamResponse.ok) {
+          lastStatus = upstreamResponse.status;
+          lastMessage = `Upstream responded with status ${upstreamResponse.status}`;
+          continue;
+        }
+
+        res.setHeader("content-type", contentType);
+        return res.status(upstreamResponse.status).send(payload);
+      } catch (error) {
+        lastMessage = error?.message || "Owner search upstream request failed";
+      }
+    }
+
+    return res.status(lastStatus).json({ error: lastMessage });
+  } catch (error) {
+    console.error("Error proxying owner search:", error.message);
+    return res.status(500).json({ error: "Failed to proxy owner search request" });
   }
 };
