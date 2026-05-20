@@ -21,6 +21,7 @@ import {
 dotenv.config();
 
 const app = express();
+app.disable("x-powered-by");
 
 // IIS virtual directory fix
 // If IIS forwards URL like /eodb_backend/otp/send-otp,
@@ -43,6 +44,15 @@ app.use(cors(corsOptions));
 // Body Parser
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Prevent API response caching for dynamic/sensitive endpoints.
+app.use((req, res, next) => {
+  if (req.path.startsWith("/mapserver/service/")) return next();
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
 
 // IP & Geolocation Tracking Middleware
 app.use(trackingMiddleware);
@@ -83,7 +93,7 @@ app.use("/analytics", analyticsRoutes);
 app.get("/health", (req, res) => {
   res.json({
     status: "OK",
-    timestamp: new Date().toISOString(),
+    timestamp: new Date().toISOString().slice(0, 10),
   });
 });
 
