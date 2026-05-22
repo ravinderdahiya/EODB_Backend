@@ -9,6 +9,16 @@ const getIP = (req) => {
   return req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 };
 
+const shouldExposeAuthTokenBody = () => (
+  String(process.env.EXPOSE_AUTH_TOKEN_BODY || "").toLowerCase() === "true"
+);
+
+const buildAuthSuccessPayload = ({ message, token, user }) => ({
+  message,
+  ...(shouldExposeAuthTokenBody() ? { token } : {}),
+  user,
+});
+
 const verifyGoogleIdToken = async (idToken) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
@@ -133,7 +143,7 @@ export const login = async (req, res) => {
       path: "/",
     });
 
-    res.json({
+    res.json(buildAuthSuccessPayload({
       message: "Login success",
       token,
       user: {
@@ -141,8 +151,8 @@ export const login = async (req, res) => {
         email: user.email,
         fullname: user.fullname,
         role: user.role
-      }
-    })
+      },
+    }))
 
   } catch (error) {
     console.error("Login Error:", error)
@@ -204,7 +214,7 @@ export const googleLogin = async (req, res) => {
       path: "/",
     });
 
-    res.json({
+    res.json(buildAuthSuccessPayload({
       message: "Google login success",
       token,
       user: {
@@ -212,8 +222,8 @@ export const googleLogin = async (req, res) => {
         email: user.email,
         fullname: user.fullname,
         role: user.role
-      }
-    });
+      },
+    }));
   } catch (error) {
     console.error("Google Login Error:", error);
     res.status(500).json({ message: error.message || "Google login failed" });
@@ -297,7 +307,7 @@ export const adminLogin = async (req, res) => {
       path: "/",
     });
 
-    res.json({
+    res.json(buildAuthSuccessPayload({
       message: "Admin login success",
       token,
       user: {
@@ -305,8 +315,8 @@ export const adminLogin = async (req, res) => {
         email: admin.email,
         fullname: admin.fullname,
         role: admin.role
-      }
-    });
+      },
+    }));
 
   } catch (error) {
     console.error("Admin Login Error:", error);

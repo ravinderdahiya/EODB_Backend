@@ -7,6 +7,10 @@ import analyticsService from "../services/analyticsService.js";
 
 dotenv.config();
 
+const shouldExposeAuthTokenBody = () => (
+    String(process.env.EXPOSE_AUTH_TOKEN_BODY || "").toLowerCase() === "true"
+);
+
 const normalizePhone = (phone) => {
     if (!phone) return null;
     const digitsOnly = String(phone).replace(/\D/g, "");
@@ -258,7 +262,7 @@ export const verifyOtp = async(req, res) => {
 
         res.json({
             message: "OTP verified successfully",
-            token,
+            ...(shouldExposeAuthTokenBody() ? { token } : {}),
             session: session?.id,
             user: {
                 id: user.id,
