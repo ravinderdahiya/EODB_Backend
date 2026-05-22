@@ -9,6 +9,7 @@ import {
   getCategories,
   getFrontendRuntimeConfig,
   proxyOwnerSearch,
+  resolveHindiCadastralSearch,
 } from "./api-url.controller.js";
 import { authMiddleware } from "../middleware/auth.middleware.js";
 
@@ -18,6 +19,7 @@ const router = Router();
 router.get("/categories", authMiddleware, getCategories);
 router.get("/frontend-config", getFrontendRuntimeConfig);
 router.get("/owner-search", proxyOwnerSearch);
+router.get("/cadastral-hindi-search", resolveHindiCadastralSearch);
 router.post("/", authMiddleware, createApiUrl);
 router.get("/", authMiddleware, getAllApiUrls);
 router.get("/:id", authMiddleware, getApiUrlById);
