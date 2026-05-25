@@ -26,6 +26,7 @@ model User {
   
   // Relationship to login session logs
   sessionLogs      LoginSessionLog[]
+  feedbacks        Feedback[]
 }
 
 model LoginSessionLog {
@@ -118,4 +119,25 @@ model AnalyticsEvent {
   @@index([userId])
   @@index([createdAt])
   @@map("analytics_events")
+}
+
+model Feedback {
+  id           Int       @id @default(autoincrement())
+  name         String
+  mobile       String?
+  email        String?
+  message      String
+  pageUrl      String?
+  status       String    @default("new")
+  userId       Int?
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("feedback_entries")
 }

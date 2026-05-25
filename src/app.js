@@ -8,6 +8,7 @@ import otpRoutes from "./otp/otp.routes.js";
 import apiUrlRoutes from "./api-url/api-url.routes.js";
 import mapserverRoutes from "./mapserver/mapserver.routes.js";
 import analyticsRoutes from "./analytics/analytics.routes.js";
+import feedbackRoutes from "./feedback/feedback.routes.js";
 import { trackingMiddleware } from "./middleware/tracking.middleware.js";
 import { requireAuthUnlessPublic } from "./middleware/auth.middleware.js";
 import {
@@ -88,6 +89,7 @@ app.use("/otp", otpRoutes);
 app.use("/api-url", apiUrlRoutes);
 app.use("/mapserver", mapserverRoutes);
 app.use("/analytics", analyticsRoutes);
+app.use("/feedback", feedbackRoutes);
 
 // Health Check - no client data in response
 app.get("/health", (req, res) => {

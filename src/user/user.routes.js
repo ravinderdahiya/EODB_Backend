@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { signup, login, logout, googleLogin, getMe, adminLogin, getLoginLogs, getTokenInfo, getAdminUsers } from "./user.controller.js"
+import { signup, login, logout, googleLogin, getMe, adminLogin, getLoginLogs, getTokenInfo, getAdminUsers, getUsersList } from "./user.controller.js"
 import { authMiddleware } from "../middleware/auth.middleware.js"
 
 const router = Router()
@@ -13,6 +13,7 @@ router.get("/me", authMiddleware, getMe);
 router.get("/login-logs", authMiddleware, getLoginLogs);
 router.get("/token-info", authMiddleware, getTokenInfo);
 router.get("/admin-users", authMiddleware, getAdminUsers);
+router.get("/users", authMiddleware, getUsersList);
 
 // Protected route
 router.get("/profile", authMiddleware, (req, res) => {

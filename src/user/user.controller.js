@@ -3,10 +3,54 @@ import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import fetch from "node-fetch"
 
+const ADMIN_ROLES = new Set(["admin", "superadmin"]);
 
 // Get IP 
 const getIP = (req) => {
   return req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+};
+
+const safeString = (value, maxLength = 120) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, maxLength);
+};
+
+const formatTimestamp = (value) =>
+  new Date(value).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+const getEffectiveRole = async (userId, fallbackRole = null) => {
+  if (!userId) return String(fallbackRole || "").toLowerCase().trim();
+
+  const dbUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+
+  return String(dbUser?.role || fallbackRole || "").toLowerCase().trim();
+};
+
+const ensureAdminAccess = async (req, res) => {
+  if (!req.user?.id) {
+    res.status(401).json({ message: "Authentication required" });
+    return false;
+  }
+
+  const role = await getEffectiveRole(req.user.id, req.user.role);
+  if (!ADMIN_ROLES.has(role)) {
+    res.status(403).json({ message: "Access denied - admin role required" });
+    return false;
+  }
+
+  return true;
 };
 
 const shouldExposeAuthTokenBody = () => (
@@ -479,5 +523,80 @@ export const getAdminUsers = async (req, res) => {
   } catch (error) {
     console.error("Get Admin Users Error:", error);
     res.status(500).json({ message: "Error fetching admin users" });
+  }
+};
+
+export const getUsersList = async (req, res) => {
+  try {
+    const hasAccess = await ensureAdminAccess(req, res);
+    if (!hasAccess) return;
+
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 5), 50);
+    const skip = (page - 1) * pageSize;
+    const search = safeString(req.query.search, 120);
+    const role = safeString(req.query.role, 40);
+
+    const where = {
+      ...(role ? { role } : {}),
+      ...(search
+        ? {
+            OR: [
+              { fullname: { contains: search, mode: "insensitive" } },
+              { email: { contains: search, mode: "insensitive" } },
+              { mobile: { contains: search, mode: "insensitive" } },
+              { role: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const [totalCount, users] = await Promise.all([
+      prisma.user.count({ where }),
+      prisma.user.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: pageSize,
+        select: {
+          id: true,
+          fullname: true,
+          email: true,
+          mobile: true,
+          role: true,
+          createdAt: true,
+          lastLoginAt: true,
+          lastLoginIp: true,
+          isLocked: true,
+          loginAttempts: true,
+        },
+      }),
+    ]);
+
+    const rows = users.map((entry) => ({
+      id: entry.id,
+      userId: `USR-${String(entry.id).padStart(4, "0")}`,
+      name: entry.fullname || "-",
+      email: entry.email || "-",
+      mobile: entry.mobile || "-",
+      role: entry.role || "-",
+      createdAt: formatTimestamp(entry.createdAt),
+      lastLoginAt: entry.lastLoginAt ? formatTimestamp(entry.lastLoginAt) : "-",
+      lastLoginIp: entry.lastLoginIp || "-",
+      isLocked: Boolean(entry.isLocked),
+      loginAttempts: entry.loginAttempts ?? 0,
+      status: entry.isLocked ? "Locked" : "Active",
+    }));
+
+    return res.json({
+      message: "Users fetched successfully",
+      page,
+      pageSize,
+      totalCount,
+      users: rows,
+    });
+  } catch (error) {
+    console.error("Get Users List Error:", error);
+    return res.status(500).json({ message: "Unable to fetch users list" });
   }
 };
