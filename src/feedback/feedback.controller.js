@@ -1,4 +1,5 @@
 import prisma from "../config/db.js";
+import fetch from "node-fetch";
 
 const ADMIN_ROLES = new Set(["admin", "superadmin"]);
 
@@ -67,6 +68,59 @@ const formatTimestamp = (value) =>
     hour12: true,
   });
 
+const normalizePhoneForWhatsApp = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/[^\d]/g, "");
+  if (!/^\d{8,15}$/.test(normalized)) return null;
+  return normalized;
+};
+
+const sendWhatsAppCloudMessage = async (textBody) => {
+  const phoneNumberId = safeString(process.env.WHATSAPP_CLOUD_PHONE_NUMBER_ID, 80);
+  const accessToken = safeString(process.env.WHATSAPP_CLOUD_ACCESS_TOKEN, 500);
+  const toNumber = normalizePhoneForWhatsApp(process.env.WHATSAPP_FEEDBACK_TO);
+  const apiVersion = safeString(process.env.WHATSAPP_CLOUD_API_VERSION, 20) || "v22.0";
+
+  if (!phoneNumberId || !accessToken || !toNumber) {
+    return { sent: false, skipped: true, reason: "missing_whatsapp_cloud_config" };
+  }
+
+  const endpoint = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: toNumber,
+      type: "text",
+      text: {
+        body: textBody.slice(0, 3500),
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const responseText = await response.text();
+    return {
+      sent: false,
+      skipped: false,
+      reason: "whatsapp_cloud_api_failed",
+      error: responseText.slice(0, 500),
+    };
+  }
+
+  const payload = await response.json();
+  return {
+    sent: true,
+    skipped: false,
+    messageId: payload?.messages?.[0]?.id || null,
+  };
+};
+
 export const submitFeedback = async (req, res) => {
   try {
     const name = safeString(req.body?.name, 120);
@@ -111,9 +165,36 @@ export const submitFeedback = async (req, res) => {
       },
     });
 
+    const feedbackRef = `FB-${saved.id}`;
+    const whatsappBody = [
+      "New user feedback",
+      `Ref: ${feedbackRef}`,
+      `Name: ${name}`,
+      mobile ? `Mobile: ${mobile}` : "",
+      email ? `Email: ${email}` : "",
+      `Message: ${message}`,
+      pageUrl ? `Page: ${pageUrl}` : "",
+      `At: ${new Date(saved.createdAt).toISOString()}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    let whatsappResult = { sent: false, skipped: true, reason: "not_attempted" };
+    try {
+      whatsappResult = await sendWhatsAppCloudMessage(whatsappBody);
+    } catch (whatsAppError) {
+      whatsappResult = {
+        sent: false,
+        skipped: false,
+        reason: "whatsapp_cloud_runtime_error",
+        error: whatsAppError?.message || "Unknown WhatsApp API error",
+      };
+    }
+
     return res.status(201).json({
       message: "Feedback submitted successfully",
       feedbackId: saved.id,
+      whatsapp: whatsappResult,
     });
   } catch (error) {
     console.error("Submit Feedback Error:", error);
