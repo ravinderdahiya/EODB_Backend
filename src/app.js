@@ -10,6 +10,7 @@ import mapserverRoutes from "./mapserver/mapserver.routes.js";
 import analyticsRoutes from "./analytics/analytics.routes.js";
 import feedbackRoutes from "./feedback/feedback.routes.js";
 import vipUserRoutes from "./vip-user/vip-user.routes.js";
+import mapLinkRoutes from "./map-link/map-link.routes.js";
 import { trackingMiddleware } from "./middleware/tracking.middleware.js";
 import { requireAuthUnlessPublic } from "./middleware/auth.middleware.js";
 import {
@@ -92,6 +93,7 @@ app.use("/mapserver", mapserverRoutes);
 app.use("/analytics", analyticsRoutes);
 app.use("/feedback", feedbackRoutes);
 app.use("/vip-users", vipUserRoutes);
+app.use("/map-link", mapLinkRoutes);
 
 // Health Check - no client data in response
 app.get("/health", (req, res) => {
