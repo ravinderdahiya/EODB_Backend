@@ -141,3 +141,15 @@ model Feedback {
   @@index([createdAt])
   @@map("feedback_entries")
 }
+
+model VipUser {
+  id        Int      @id @default(autoincrement())
+  mobile    String   @unique
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("vip_users")
+}

@@ -27,6 +27,62 @@ const formatSmsPhone = (normalizedPhone) => {
     return digits;
 };
 
+const ensureUserForPhone = async(phone) => {
+    let user = await prisma.user.findFirst({ where: { mobile: phone } });
+
+    if (!user) {
+        user = await prisma.user.create({
+            data: {
+                mobile: phone,
+                fullname: "User",
+                email: `user_${Date.now()}@eodb.com`,
+                password: "default_password",
+            },
+        });
+    }
+
+    return user;
+};
+
+const issueAuthenticatedLogin = async({ req, res, phone, user, message, vipLogin = false }) => {
+    const token = jwt.sign({ id: user.id, mobile: user.mobile },
+        process.env.JWT_SECRET, { expiresIn: "1d" }
+    );
+
+    await recordLoginAttempt(phone, true, req.clientIp, {
+        ...req.geoLocation,
+        userAgent: req.get("user-agent"),
+    });
+
+    const session = await createLoginSession(user.id, req.clientIp, {
+        ...req.geoLocation,
+        userAgent: req.get("user-agent"),
+    });
+
+    analyticsService.trackAuthEvent(vipLogin ? "vip_login_success" : "login_success", user.id, null, {});
+
+    // Set JWT as httpOnly cookie; inaccessible to JavaScript/XSS
+    res.cookie("auth_token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+        maxAge: 24 * 60 * 60 * 1000,
+        path: "/",
+    });
+
+    return res.json({
+        message,
+        ...(vipLogin ? { vipLogin: true } : {}),
+        ...(shouldExposeAuthTokenBody() ? { token } : {}),
+        session: session?.id,
+        user: {
+            id: user.id,
+            mobile: user.mobile,
+            email: user.email,
+        },
+    });
+};
+
 // ===================== SEND OTP =====================
 export const sendOtp = async(req, res) => {
     try {
@@ -43,6 +99,26 @@ export const sendOtp = async(req, res) => {
             return res.status(400).json({ message: "Invalid phone format" });
         }
 
+        const activeVipRows = await prisma.$queryRaw`
+            SELECT id
+            FROM vip_users
+            WHERE mobile = ${phone} AND "isActive" = TRUE
+            LIMIT 1
+        `;
+        const activeVip = Array.isArray(activeVipRows) && activeVipRows.length > 0;
+
+        if (activeVip) {
+            const user = await ensureUserForPhone(phone);
+            return issueAuthenticatedLogin({
+                req,
+                res,
+                phone,
+                user,
+                message: "VIP login successful",
+                vipLogin: true,
+            });
+        }
+
         // 4-digit OTP as per project requirement
         const otp = Math.floor(1000 + Math.random() * 9000);
 
@@ -56,7 +132,7 @@ export const sendOtp = async(req, res) => {
             },
         });
 
-        // OTP is NEVER returned in API response — logged to server console in dev only
+        // OTP is never returned in API response; logged only in dev
         if (process.env.NODE_ENV === "development") {
             console.log(`[DEV ONLY - never in response] OTP for ${phone}: ${otp}`);
         }
@@ -219,56 +295,17 @@ export const verifyOtp = async(req, res) => {
             return res.status(400).json({ message: "OTP expired" });
         }
 
-        let user = await prisma.user.findFirst({ where: { mobile: phone } });
-
-        if (!user) {
-            user = await prisma.user.create({
-                data: {
-                    mobile: phone,
-                    fullname: "User",
-                    email: `user_${Date.now()}@eodb.com`,
-                    password: "default_password",
-                },
-            });
-        }
-
-        const token = jwt.sign({ id: user.id, mobile: user.mobile },
-            process.env.JWT_SECRET, { expiresIn: "1d" }
-        );
+        const user = await ensureUserForPhone(phone);
 
         // Delete OTP after successful use
         await prisma.otp.deleteMany({ where: { phone } });
 
-        await recordLoginAttempt(phone, true, req.clientIp, {
-            ...req.geoLocation,
-            userAgent: req.get("user-agent"),
-        });
-
-        const session = await createLoginSession(user.id, req.clientIp, {
-            ...req.geoLocation,
-            userAgent: req.get("user-agent"),
-        });
-
-        analyticsService.trackAuthEvent("login_success", user.id, null, {});
-
-        // Set JWT as httpOnly cookie — inaccessible to JavaScript/XSS
-        res.cookie("auth_token", token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-            maxAge: 24 * 60 * 60 * 1000,
-            path: "/",
-        });
-
-        res.json({
+        return issueAuthenticatedLogin({
+            req,
+            res,
+            phone,
+            user,
             message: "OTP verified successfully",
-            ...(shouldExposeAuthTokenBody() ? { token } : {}),
-            session: session?.id,
-            user: {
-                id: user.id,
-                mobile: user.mobile,
-                email: user.email,
-            },
         });
     } catch (error) {
         console.error("Verify OTP Error:", error.message);
