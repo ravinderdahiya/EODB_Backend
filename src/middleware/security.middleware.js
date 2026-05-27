@@ -228,13 +228,27 @@ export const corsOptions = {
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Device-Id", "X-Device-Imei", "X-Device-Info"],
 };
 
 // ✅ Helper function to record login attempt
-export const recordLoginAttempt = async (phone, success, ip, geoLocation, userAgent = null) => {
+const normalizeDeviceIdentity = (deviceIdentity = {}) => ({
+  deviceId: typeof deviceIdentity.deviceId === "string" ? deviceIdentity.deviceId.trim().slice(0, 120) : null,
+  deviceImei: typeof deviceIdentity.deviceImei === "string" ? deviceIdentity.deviceImei.trim().slice(0, 64) : null,
+  deviceInfo: typeof deviceIdentity.deviceInfo === "string" ? deviceIdentity.deviceInfo.trim().slice(0, 500) : null,
+});
+
+export const recordLoginAttempt = async (
+  phone,
+  success,
+  ip,
+  geoLocation,
+  userAgent = null,
+  deviceIdentity = {},
+) => {
   try {
     const normalizedPhone = String(phone).replace(/\D/g, '').slice(-10);
+    const normalizedDeviceIdentity = normalizeDeviceIdentity(deviceIdentity);
 
     const user = await prisma.user.findFirst({
       where: { mobile: normalizedPhone }
@@ -251,6 +265,9 @@ export const recordLoginAttempt = async (phone, success, ip, geoLocation, userAg
           city: geoLocation?.city || null,
           timezone: geoLocation?.timezone || null,
           userAgent: userAgent,
+          deviceId: normalizedDeviceIdentity.deviceId,
+          deviceImei: normalizedDeviceIdentity.deviceImei,
+          deviceInfo: normalizedDeviceIdentity.deviceInfo,
           mobile: normalizedPhone,
           type: success ? "login_success" : "login_failed",
           status: success ? "success" : "failed",
@@ -285,6 +302,9 @@ export const recordLoginAttempt = async (phone, success, ip, geoLocation, userAg
           city: geoLocation?.city || null,
           timezone: geoLocation?.timezone || null,
           userAgent: userAgent,
+          deviceId: normalizedDeviceIdentity.deviceId,
+          deviceImei: normalizedDeviceIdentity.deviceImei,
+          deviceInfo: normalizedDeviceIdentity.deviceInfo,
           mobile: normalizedPhone,
           type: "login_success",
           status: "success",
@@ -319,6 +339,9 @@ export const recordLoginAttempt = async (phone, success, ip, geoLocation, userAg
           city: geoLocation?.city || null,
           timezone: geoLocation?.timezone || null,
           userAgent: userAgent,
+          deviceId: normalizedDeviceIdentity.deviceId,
+          deviceImei: normalizedDeviceIdentity.deviceImei,
+          deviceInfo: normalizedDeviceIdentity.deviceInfo,
           mobile: normalizedPhone,
           type: "login_failed",
           status: "failed",
@@ -340,8 +363,9 @@ export const recordLoginAttempt = async (phone, success, ip, geoLocation, userAg
 };
 
 // ✅ Helper function to create login session
-export const createLoginSession = async (userId, ip, geoLocation, userAgent = null) => {
+export const createLoginSession = async (userId, ip, geoLocation, userAgent = null, deviceIdentity = {}) => {
   try {
+    const normalizedDeviceIdentity = normalizeDeviceIdentity(deviceIdentity);
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const session = await prisma.loginSessionLog.create({
@@ -355,6 +379,9 @@ export const createLoginSession = async (userId, ip, geoLocation, userAgent = nu
         city: geoLocation?.city || null,
         timezone: geoLocation?.timezone || null,
         userAgent: userAgent,
+        deviceId: normalizedDeviceIdentity.deviceId,
+        deviceImei: normalizedDeviceIdentity.deviceImei,
+        deviceInfo: normalizedDeviceIdentity.deviceInfo,
         type: "session_start",
         status: "active",
         loginAt: new Date(),

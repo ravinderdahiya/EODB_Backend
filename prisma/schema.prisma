@@ -49,6 +49,9 @@ model LoginSessionLog {
   city      String?
   timezone  String?
   userAgent String?
+  deviceId  String?
+  deviceImei String?
+  deviceInfo String?
   mobile    String?   // Mobile number from request
   
   // Request details

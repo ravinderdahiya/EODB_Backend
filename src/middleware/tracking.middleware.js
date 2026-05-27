@@ -1,6 +1,7 @@
 import geoip from "geoip-lite";
 import { PrismaClient } from "@prisma/client";
 import analyticsService from "../services/analyticsService.js";
+import { getRequestDeviceIdentity } from "../utils/device-identity.utils.js";
 
 const prisma = new PrismaClient();
 
@@ -69,6 +70,7 @@ export const trackingMiddleware = async (req, res, next) => {
 export const saveLocationLog = async (req) => {
   try {
     const geoLocation = req.geoLocation;
+    const deviceIdentity = getRequestDeviceIdentity(req);
     const userId = req.user?.id || null;
     const mobile =
       req.user?.mobile ||
@@ -87,6 +89,9 @@ export const saveLocationLog = async (req) => {
         city: geoLocation?.city || null,
         timezone: geoLocation?.timezone || null,
         userAgent: req.headers["user-agent"] || null,
+        deviceId: deviceIdentity.deviceId,
+        deviceImei: deviceIdentity.deviceImei,
+        deviceInfo: deviceIdentity.deviceInfo,
         method: req.method || null,
         url: req.originalUrl || req.url || null,
         responseStatus: null, // Will be updated by response middleware

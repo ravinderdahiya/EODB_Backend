@@ -412,7 +412,14 @@ export const getLoginLogs = async (req, res) => {
       },
     });
 
-    const formatted = logs.map((entry) => ({
+    const formatted = logs.map((entry) => {
+      const deviceParts = [
+        entry.userAgent ? `UA: ${entry.userAgent}` : null,
+        entry.deviceId ? `DeviceID: ${entry.deviceId}` : null,
+        entry.deviceImei ? `IMEI: ${entry.deviceImei}` : null,
+      ].filter(Boolean);
+
+      return {
       id: entry.id,
       userId: entry.user?.id ? `USR-${entry.user.id.toString().padStart(4, "0")}` : entry.mobile || "Unknown",
       name: entry.user?.fullname || entry.mobile || "Unknown",
@@ -436,7 +443,10 @@ export const getLoginLogs = async (req, res) => {
             hour12: true,
           }),
       ipAddress: entry.ipAddress || "-",
-      device: entry.userAgent || "-",
+      device: deviceParts.length ? deviceParts.join(" | ") : "-",
+      deviceId: entry.deviceId || "-",
+      deviceImei: entry.deviceImei || "-",
+      deviceInfo: entry.deviceInfo || "-",
       mobile: entry.mobile || "-",
       city: entry.city || "-",
       country: entry.country || "-",
@@ -447,7 +457,8 @@ export const getLoginLogs = async (req, res) => {
           ? `${entry.latitude}, ${entry.longitude}`
           : "-",
       status: entry.status || (entry.type === "login_failed" ? "Failed" : "Success"),
-    }));
+      };
+    });
 
     res.json({
       logs: formatted,

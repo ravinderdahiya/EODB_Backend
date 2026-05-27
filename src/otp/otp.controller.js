@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import dotenv from "dotenv";
 import { recordLoginAttempt, createLoginSession } from "../middleware/security.middleware.js";
 import analyticsService from "../services/analyticsService.js";
+import { getRequestDeviceIdentity } from "../utils/device-identity.utils.js";
 
 dotenv.config();
 
@@ -67,19 +68,16 @@ const ensureUserForPhone = async(phone) => {
 };
 
 const issueAuthenticatedLogin = async({ req, res, phone, user, message, vipLogin = false }) => {
+    const deviceIdentity = getRequestDeviceIdentity(req);
+    const userAgent = req.get("user-agent");
+
     const token = jwt.sign({ id: user.id, mobile: user.mobile },
         process.env.JWT_SECRET, { expiresIn: "1d" }
     );
 
-    await recordLoginAttempt(phone, true, req.clientIp, {
-        ...req.geoLocation,
-        userAgent: req.get("user-agent"),
-    });
+    await recordLoginAttempt(phone, true, req.clientIp, req.geoLocation, userAgent, deviceIdentity);
 
-    const session = await createLoginSession(user.id, req.clientIp, {
-        ...req.geoLocation,
-        userAgent: req.get("user-agent"),
-    });
+    const session = await createLoginSession(user.id, req.clientIp, req.geoLocation, userAgent, deviceIdentity);
 
     analyticsService.trackAuthEvent(vipLogin ? "vip_login_success" : "login_success", user.id, null, {});
 
