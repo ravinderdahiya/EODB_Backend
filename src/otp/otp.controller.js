@@ -1,6 +1,7 @@
 import prisma from "../config/db.js";
 import axios from "axios";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
 import dotenv from "dotenv";
 import { recordLoginAttempt, createLoginSession } from "../middleware/security.middleware.js";
 import analyticsService from "../services/analyticsService.js";
@@ -9,6 +10,16 @@ dotenv.config();
 
 const shouldExposeAuthTokenBody = () => (
     String(process.env.EXPOSE_AUTH_TOKEN_BODY || "").toLowerCase() === "true"
+);
+
+const BCRYPT_HASH_PATTERN = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
+
+const isBcryptHash = (value) => (
+    typeof value === "string" && BCRYPT_HASH_PATTERN.test(value)
+);
+
+const generateOpaquePasswordSeed = (phone) => (
+    `${phone}:${Date.now()}:${Math.random().toString(36).slice(2)}`
 );
 
 const normalizePhone = (phone) => {
@@ -30,14 +41,25 @@ const formatSmsPhone = (normalizedPhone) => {
 const ensureUserForPhone = async(phone) => {
     let user = await prisma.user.findFirst({ where: { mobile: phone } });
 
+    const hashedPassword = await bcrypt.hash(generateOpaquePasswordSeed(phone), 10);
+
     if (!user) {
         user = await prisma.user.create({
             data: {
                 mobile: phone,
                 fullname: "User",
                 email: `user_${Date.now()}@eodb.com`,
-                password: "default_password",
+                password: hashedPassword,
             },
+        });
+        return user;
+    }
+
+    // Remediate legacy plaintext/default password records created before hashing fix.
+    if (!isBcryptHash(user.password)) {
+        user = await prisma.user.update({
+            where: { id: user.id },
+            data: { password: hashedPassword },
         });
     }
 

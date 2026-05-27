@@ -2,23 +2,33 @@ import helmet from "helmet";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import prisma from "../config/db.js";
 
+const cspDirectives = {
+  defaultSrc: ["'self'"],
+  baseUri: ["'self'"],
+  objectSrc: ["'none'"],
+  frameAncestors: ["'none'"],
+  formAction: ["'self'"],
+  frameSrc: ["'none'"],
+  scriptSrc: ["'self'"],
+  scriptSrcAttr: ["'none'"],
+  styleSrc: ["'self'"],
+  imgSrc: ["'self'", "data:"],
+  fontSrc: ["'self'", "data:"],
+  connectSrc: ["'self'"],
+  workerSrc: ["'self'"],
+  manifestSrc: ["'self'"],
+  upgradeInsecureRequests: [],
+};
+
+const cspReportOnly = String(process.env.CSP_REPORT_ONLY || "").toLowerCase() === "true";
+
 
 // ✅ Helmet middleware - Set security HTTP headers
 export const securityHeaders = helmet({
   contentSecurityPolicy: {
+    reportOnly: cspReportOnly,
     useDefaults: true,
-    directives: {
-      defaultSrc: ["'self'"],
-      baseUri: ["'self'"],
-      objectSrc: ["'none'"],
-      frameAncestors: ["'none'"],
-      scriptSrc: ["'self'"],
-      scriptSrcAttr: ["'none'"],
-      styleSrc: ["'self'"],
-      imgSrc: ["'self'", "data:"],
-      fontSrc: ["'self'", "data:"],
-      connectSrc: ["'self'"],
-    },
+    directives: cspDirectives,
   },
   strictTransportSecurity: {
     maxAge: 31536000,

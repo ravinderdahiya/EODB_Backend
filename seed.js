@@ -10,10 +10,14 @@ async function upsertFrontendRuntimeUrls() {
 async function main() {
   console.log("Starting seed...");
 
-  const adminEmail = "admin@harsac.gov.in";
-  const adminPassword = "admin123";
-  const adminMobile = "9999999999";
-  const adminFullname = "Super Admin";
+  const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@harsac.gov.in";
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  const adminMobile = process.env.SEED_ADMIN_MOBILE || "9999999999";
+  const adminFullname = process.env.SEED_ADMIN_FULLNAME || "Super Admin";
+
+  if (!adminPassword) {
+    throw new Error("Missing SEED_ADMIN_PASSWORD environment variable.");
+  }
 
   // Check if admin already exists
   const existingAdmin = await prisma.user.findUnique({
@@ -52,8 +56,18 @@ async function main() {
 
   // Create additional admin users if needed
   const adminUsers = [
-    { email: "admin1@harsac.gov.in", fullname: "Admin One", password: "admin123", mobile: "8888888881" },
-    { email: "admin2@harsac.gov.in", fullname: "Admin Two", password: "admin123", mobile: "8888888882" },
+    {
+      email: process.env.SEED_ADMIN1_EMAIL || "admin1@harsac.gov.in",
+      fullname: process.env.SEED_ADMIN1_FULLNAME || "Admin One",
+      password: process.env.SEED_ADMIN1_PASSWORD || adminPassword,
+      mobile: process.env.SEED_ADMIN1_MOBILE || "8888888881",
+    },
+    {
+      email: process.env.SEED_ADMIN2_EMAIL || "admin2@harsac.gov.in",
+      fullname: process.env.SEED_ADMIN2_FULLNAME || "Admin Two",
+      password: process.env.SEED_ADMIN2_PASSWORD || adminPassword,
+      mobile: process.env.SEED_ADMIN2_MOBILE || "8888888882",
+    },
   ];
 
   for (const adminUser of adminUsers) {
