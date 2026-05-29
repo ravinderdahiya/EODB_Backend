@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import prisma from "../config/db.js";
+import { ensureVipDeviceColumns, normalizeVipDeviceInput } from "./vip-device.service.js";
 
 const ADMIN_ROLES = new Set(["admin", "superadmin"]);
 
@@ -32,6 +33,10 @@ const mapVipRow = (row) => ({
   id: row.id,
   mobile: row.mobile,
   notes: row.notes,
+  deviceId: row.deviceId || row.device_id || null,
+  deviceImei: row.deviceImei || row.device_imei || null,
+  deviceLabel: row.deviceLabel || row.device_label || null,
+  deviceInfo: row.deviceInfo || row.device_info || null,
   isActive: row.isActive,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
@@ -41,6 +46,10 @@ const selectColumnsSql = Prisma.sql`
   id,
   mobile,
   notes,
+  device_id,
+  device_imei,
+  device_label,
+  device_info,
   "isActive",
   "createdAt",
   "updatedAt"
@@ -94,6 +103,8 @@ const ensureAdminAccess = async (req, res) => {
 
 export const createVipUser = async (req, res) => {
   try {
+    await ensureVipDeviceColumns();
+
     const hasAccess = await ensureAdminAccess(req, res);
     if (!hasAccess) return;
 
@@ -109,10 +120,22 @@ export const createVipUser = async (req, res) => {
 
     const notes = `${req.body?.notes || ""}`.trim() || null;
     const isActive = toBooleanOrUndefined(req.body?.isActive);
+    const normalizedDevice = normalizeVipDeviceInput({
+      deviceId: req.body?.deviceId,
+      deviceImei: req.body?.deviceImei,
+      deviceLabel: req.body?.deviceLabel,
+      deviceInfo: req.body?.deviceInfo,
+    });
+
+    if (!normalizedDevice.deviceId && !normalizedDevice.deviceImei) {
+      return res.status(400).json({
+        message: "VIP device binding required (deviceId or deviceImei).",
+      });
+    }
 
     const rows = await prisma.$queryRaw`
-      INSERT INTO vip_users (mobile, notes, "isActive", "createdAt", "updatedAt")
-      VALUES (${mobile}, ${notes}, ${isActive ?? true}, NOW(), NOW())
+      INSERT INTO vip_users (mobile, notes, device_id, device_imei, device_label, device_info, "isActive", "createdAt", "updatedAt")
+      VALUES (${mobile}, ${notes}, ${normalizedDevice.deviceId}, ${normalizedDevice.deviceImei}, ${normalizedDevice.deviceLabel}, ${normalizedDevice.deviceInfo}, ${isActive ?? true}, NOW(), NOW())
       RETURNING ${selectColumnsSql}
     `;
 
@@ -128,6 +151,8 @@ export const createVipUser = async (req, res) => {
 
 export const getVipUsers = async (req, res) => {
   try {
+    await ensureVipDeviceColumns();
+
     const hasAccess = await ensureAdminAccess(req, res);
     if (!hasAccess) return;
 
@@ -141,7 +166,15 @@ export const getVipUsers = async (req, res) => {
 
     if (search) {
       const like = `%${search}%`;
-      filters.push(Prisma.sql`(mobile ILIKE ${like} OR COALESCE(notes, '') ILIKE ${like})`);
+      filters.push(
+        Prisma.sql`(
+          mobile ILIKE ${like}
+          OR COALESCE(notes, '') ILIKE ${like}
+          OR COALESCE(device_id, '') ILIKE ${like}
+          OR COALESCE(device_imei, '') ILIKE ${like}
+          OR COALESCE(device_label, '') ILIKE ${like}
+        )`
+      );
     }
 
     const whereSql = filters.length
@@ -170,6 +203,8 @@ export const getVipUsers = async (req, res) => {
 
 export const getVipUserById = async (req, res) => {
   try {
+    await ensureVipDeviceColumns();
+
     const hasAccess = await ensureAdminAccess(req, res);
     if (!hasAccess) return;
 
@@ -195,6 +230,8 @@ export const getVipUserById = async (req, res) => {
 
 export const updateVipUser = async (req, res) => {
   try {
+    await ensureVipDeviceColumns();
+
     const hasAccess = await ensureAdminAccess(req, res);
     if (!hasAccess) return;
 
@@ -216,6 +253,12 @@ export const updateVipUser = async (req, res) => {
 
     const nextNotes = req.body?.notes;
     const nextIsActive = toBooleanOrUndefined(req.body?.isActive);
+    const incomingDevice = normalizeVipDeviceInput({
+      deviceId: req.body?.deviceId,
+      deviceImei: req.body?.deviceImei,
+      deviceLabel: req.body?.deviceLabel,
+      deviceInfo: req.body?.deviceInfo,
+    });
 
     if (nextMobile && nextMobile !== existing.mobile) {
       const duplicate = await getVipByMobile(nextMobile);
@@ -229,11 +272,25 @@ export const updateVipUser = async (req, res) => {
       ? (`${nextNotes || ""}`.trim() || null)
       : existing.notes;
     const updatedIsActive = nextIsActive !== undefined ? nextIsActive : existing.isActive;
+    const updatedDeviceId = req.body?.deviceId !== undefined ? incomingDevice.deviceId : (existing.deviceId || null);
+    const updatedDeviceImei = req.body?.deviceImei !== undefined ? incomingDevice.deviceImei : (existing.deviceImei || null);
+    const updatedDeviceLabel = req.body?.deviceLabel !== undefined ? incomingDevice.deviceLabel : (existing.deviceLabel || null);
+    const updatedDeviceInfo = req.body?.deviceInfo !== undefined ? incomingDevice.deviceInfo : (existing.deviceInfo || null);
+
+    if (!updatedDeviceId && !updatedDeviceImei) {
+      return res.status(400).json({
+        message: "VIP device binding required (deviceId or deviceImei).",
+      });
+    }
 
     const rows = await prisma.$queryRaw`
       UPDATE vip_users
       SET mobile = ${updatedMobile},
           notes = ${updatedNotes},
+          device_id = ${updatedDeviceId},
+          device_imei = ${updatedDeviceImei},
+          device_label = ${updatedDeviceLabel},
+          device_info = ${updatedDeviceInfo},
           "isActive" = ${updatedIsActive},
           "updatedAt" = NOW()
       WHERE id = ${id}
@@ -252,6 +309,8 @@ export const updateVipUser = async (req, res) => {
 
 export const toggleVipUserStatus = async (req, res) => {
   try {
+    await ensureVipDeviceColumns();
+
     const hasAccess = await ensureAdminAccess(req, res);
     if (!hasAccess) return;
 
@@ -286,6 +345,8 @@ export const toggleVipUserStatus = async (req, res) => {
 
 export const deleteVipUser = async (req, res) => {
   try {
+    await ensureVipDeviceColumns();
+
     const hasAccess = await ensureAdminAccess(req, res);
     if (!hasAccess) return;
 

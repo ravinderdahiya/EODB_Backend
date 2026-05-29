@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import { recordLoginAttempt, createLoginSession } from "../middleware/security.middleware.js";
 import analyticsService from "../services/analyticsService.js";
 import { getRequestDeviceIdentity } from "../utils/device-identity.utils.js";
+import { ensureVipDeviceColumns, isVipDeviceAuthorized } from "../vip-user/vip-device.service.js";
 
 dotenv.config();
 
@@ -125,8 +126,13 @@ export const sendOtp = async(req, res) => {
             return res.status(400).json({ message: "Invalid phone format" });
         }
 
+        await ensureVipDeviceColumns();
+
         const activeVipRows = await prisma.$queryRaw`
             SELECT id
+                , mobile
+                , device_id
+                , device_imei
             FROM vip_users
             WHERE mobile = ${phone} AND "isActive" = TRUE
             LIMIT 1
@@ -134,6 +140,15 @@ export const sendOtp = async(req, res) => {
         const activeVip = Array.isArray(activeVipRows) && activeVipRows.length > 0;
 
         if (activeVip) {
+            const deviceIdentity = getRequestDeviceIdentity(req);
+            const authorization = isVipDeviceAuthorized(activeVipRows[0], deviceIdentity);
+            if (!authorization.ok) {
+                return res.status(403).json({
+                    message: "VIP device authorization failed",
+                    reason: authorization.reason,
+                });
+            }
+
             const user = await ensureUserForPhone(phone);
             return issueAuthenticatedLogin({
                 req,
