@@ -13,6 +13,18 @@ const shouldExposeAuthTokenBody = () => (
     String(process.env.EXPOSE_AUTH_TOKEN_BODY || "").toLowerCase() === "true"
 );
 
+const useSecureCookies = () => (
+    String(process.env.ALLOW_INSECURE_COOKIES || "").toLowerCase() !== "true"
+);
+
+const getAuthCookieOptions = () => ({
+    httpOnly: true,
+    secure: useSecureCookies(),
+    sameSite: useSecureCookies() ? "strict" : "lax",
+    maxAge: 24 * 60 * 60 * 1000,
+    path: "/",
+});
+
 const BCRYPT_HASH_PATTERN = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
 
 const isBcryptHash = (value) => (
@@ -82,13 +94,7 @@ const issueAuthenticatedLogin = async({ req, res, phone, user, message, vipLogin
     analyticsService.trackAuthEvent(vipLogin ? "vip_login_success" : "login_success", user.id, null, {});
 
     // Set JWT as httpOnly cookie; inaccessible to JavaScript/XSS
-    res.cookie("auth_token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-        maxAge: 24 * 60 * 60 * 1000,
-        path: "/",
-    });
+    res.cookie("auth_token", token, getAuthCookieOptions());
 
     return res.json({
         message,

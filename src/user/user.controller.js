@@ -57,6 +57,18 @@ const shouldExposeAuthTokenBody = () => (
   String(process.env.EXPOSE_AUTH_TOKEN_BODY || "").toLowerCase() === "true"
 );
 
+const useSecureCookies = () => (
+  String(process.env.ALLOW_INSECURE_COOKIES || "").toLowerCase() !== "true"
+);
+
+const getAuthCookieOptions = () => ({
+  httpOnly: true,
+  secure: useSecureCookies(),
+  sameSite: useSecureCookies() ? "strict" : "lax",
+  maxAge: 24 * 60 * 60 * 1000,
+  path: "/",
+});
+
 const buildAuthSuccessPayload = ({ message, token, user }) => ({
   message,
   ...(shouldExposeAuthTokenBody() ? { token } : {}),
@@ -178,13 +190,7 @@ export const login = async (req, res) => {
       ip: ip
     };
 
-    res.cookie("auth_token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      maxAge: 24 * 60 * 60 * 1000,
-      path: "/",
-    });
+    res.cookie("auth_token", token, getAuthCookieOptions());
 
     res.json(buildAuthSuccessPayload({
       message: "Login success",
@@ -249,13 +255,7 @@ export const googleLogin = async (req, res) => {
       ip: ip
     };
 
-    res.cookie("auth_token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      maxAge: 24 * 60 * 60 * 1000,
-      path: "/",
-    });
+    res.cookie("auth_token", token, getAuthCookieOptions());
 
     res.json(buildAuthSuccessPayload({
       message: "Google login success",
@@ -282,7 +282,12 @@ export const logout = (req, res) => {
     }
 
     // Clear auth cookie + client-side storage hints
-    res.clearCookie("auth_token", { path: "/" });
+    res.clearCookie("auth_token", {
+      path: "/",
+      httpOnly: true,
+      secure: useSecureCookies(),
+      sameSite: useSecureCookies() ? "strict" : "lax",
+    });
 
     res.json({
       message: "Logout success",
@@ -340,13 +345,7 @@ export const adminLogin = async (req, res) => {
       ip: ip
     };
 
-    res.cookie("auth_token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      maxAge: 24 * 60 * 60 * 1000,
-      path: "/",
-    });
+    res.cookie("auth_token", token, getAuthCookieOptions());
 
     res.json(buildAuthSuccessPayload({
       message: "Admin login success",

@@ -25,6 +25,22 @@ dotenv.config();
 
 const app = express();
 app.disable("x-powered-by");
+app.set("trust proxy", 1);
+
+const useSecureCookies = () => (
+  String(process.env.ALLOW_INSECURE_COOKIES || "").toLowerCase() !== "true"
+);
+
+const isHttpsRequest = (req) => {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  const frontEndHttps = String(req.headers["front-end-https"] || "").toLowerCase();
+  const arrSsl = req.headers["x-arr-ssl"];
+
+  return req.secure || forwardedProto === "https" || frontEndHttps === "on" || Boolean(arrSsl);
+};
 
 // IIS virtual directory fix
 // If IIS forwards URL like /eodb_backend/otp/send-otp,
@@ -34,6 +50,24 @@ app.use((req, res, next) => {
     req.url = "/";
   } else if (req.url.startsWith("/eodb_backend/")) {
     req.url = req.url.replace(/^\/eodb_backend/, "");
+  }
+  next();
+});
+
+// Enforce HTTPS in production so credentials/OTP are never accepted over cleartext HTTP.
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV !== "production") return next();
+  if (isHttpsRequest(req)) return next();
+
+  return res.status(426).json({ message: "HTTPS required" });
+});
+
+// Explicitly block unsafe HTTP verbs often flagged by scanners.
+app.use((req, res, next) => {
+  const method = String(req.method || "").toUpperCase();
+  if (method === "TRACE" || method === "TRACK") {
+    res.setHeader("Allow", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS");
+    return res.status(405).json({ message: `HTTP method ${method} is not allowed` });
   }
   next();
 });
@@ -75,10 +109,10 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === "production",
+    secure: useSecureCookies(),
     httpOnly: true,
     maxAge: 1000 * 60 * 60 * 24, // 24 hours
-    sameSite: "strict",
+    sameSite: useSecureCookies() ? "strict" : "lax",
   },
 }));
 
