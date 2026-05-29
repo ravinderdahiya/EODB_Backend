@@ -75,6 +75,67 @@ const buildAuthSuccessPayload = ({ message, token, user }) => ({
   user,
 });
 
+const startOfToday = () => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+};
+
+const startOfDaysAgo = (days) => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+};
+
+const buildPublicAnnouncements = ({
+  registeredLast7Days,
+  loggedInToday,
+  activeSessions,
+  latestSessionLog,
+}) => {
+  const nowIso = new Date().toISOString();
+
+  const announcements = [
+    {
+      id: "ann-registered-7d",
+      title: "New User Growth",
+      description: `${registeredLast7Days} users registered in the last 7 days.`,
+      createdAt: nowIso,
+      category: "growth",
+    },
+    {
+      id: "ann-login-today",
+      title: "Today's Login Activity",
+      description: `${loggedInToday} successful logins recorded today.`,
+      createdAt: nowIso,
+      category: "activity",
+    },
+    {
+      id: "ann-active-sessions",
+      title: "Current Active Sessions",
+      description: `${activeSessions} sessions are currently active.`,
+      createdAt: nowIso,
+      category: "session",
+    },
+  ];
+
+  if (latestSessionLog?.createdAt) {
+    const latestAt = latestSessionLog.createdAt.toISOString();
+    const place = [latestSessionLog.city, latestSessionLog.country].filter(Boolean).join(", ");
+    announcements.unshift({
+      id: `ann-latest-${latestSessionLog.id}`,
+      title: "Latest Platform Activity",
+      description: place
+        ? `Recent login activity observed from ${place}.`
+        : "Recent login activity observed on the platform.",
+      createdAt: latestAt,
+      category: "latest",
+    });
+  }
+
+  return announcements
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 4);
+};
+
 const verifyGoogleIdToken = async (idToken) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
@@ -483,6 +544,86 @@ export const getMe = (req, res) => {
     });
   } else {
     res.status(401).json({ message: "Not logged in" });
+  }
+};
+
+export const getPublicLoginInsights = async (req, res) => {
+  try {
+    const now = new Date();
+    const todayStart = startOfToday();
+    const sevenDaysAgo = startOfDaysAgo(7);
+
+    const [
+      totalRegisteredUsers,
+      registeredLast7Days,
+      loggedInToday,
+      activeSessions,
+      activeUsersRaw,
+      latestSessionLog,
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({
+        where: {
+          createdAt: { gte: sevenDaysAgo },
+        },
+      }),
+      prisma.loginSessionLog.count({
+        where: {
+          type: "login_success",
+          createdAt: { gte: todayStart },
+        },
+      }),
+      prisma.loginSessionLog.count({
+        where: {
+          type: "session_start",
+          status: "active",
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+      }),
+      prisma.loginSessionLog.findMany({
+        where: {
+          type: "session_start",
+          status: "active",
+          userId: { not: null },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+        select: { userId: true },
+        distinct: ["userId"],
+      }),
+      prisma.loginSessionLog.findFirst({
+        where: {
+          type: { in: ["session_start", "login_success"] },
+        },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          createdAt: true,
+          city: true,
+          country: true,
+        },
+      }),
+    ]);
+
+    const announcements = buildPublicAnnouncements({
+      registeredLast7Days,
+      loggedInToday,
+      activeSessions,
+      latestSessionLog,
+    });
+
+    return res.json({
+      metrics: {
+        totalRegisteredUsers,
+        activeSessions,
+        activeUsers: activeUsersRaw.length,
+        loggedInToday,
+      },
+      announcements,
+      generatedAt: now.toISOString(),
+    });
+  } catch (error) {
+    console.error("Get Public Login Insights Error:", error);
+    return res.status(500).json({ message: "Unable to load login insights" });
   }
 };
 
