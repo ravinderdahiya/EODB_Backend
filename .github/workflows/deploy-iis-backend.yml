@@ -1,0 +1,48 @@
+name: Deploy Backend To IIS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      run_db_push:
+        description: "Run prisma db push after deploy"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on:
+      - self-hosted
+      - windows
+      - iis
+    env:
+      IIS_BACKEND_PATH: D:\inetpub\wwwroot\eodb_backend
+      IIS_BACKEND_APP_POOL: EODB_Backend
+      RUN_DB_PUSH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_db_push || 'false' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Deploy backend
+        shell: pwsh
+        run: >
+          .\.github\scripts\deploy-backend.ps1
+          -SourceDir "${{ github.workspace }}"
+          -TargetDir "$env:IIS_BACKEND_PATH"
+          -AppPoolName "$env:IIS_BACKEND_APP_POOL"
+          -RunDbPush "$env:RUN_DB_PUSH"
