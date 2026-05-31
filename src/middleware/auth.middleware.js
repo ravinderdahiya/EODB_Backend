@@ -21,12 +21,33 @@ const PUBLIC_ROUTE_RULES = [
   { method: "GET", path: "/health" },
 ];
 
+const normalizeRequestPath = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "/";
+
+  let normalized = raw.startsWith("/") ? raw : `/${raw}`;
+
+  // IIS subdirectory deployments may forward /eodb_backend/... to Express.
+  if (normalized === "/eodb_backend") {
+    normalized = "/";
+  } else {
+    normalized = normalized.replace(/^\/eodb_backend(?=\/|$)/i, "");
+    if (!normalized.startsWith("/")) normalized = `/${normalized}`;
+  }
+
+  if (normalized.length > 1) {
+    normalized = normalized.replace(/\/+$/, "");
+  }
+
+  return normalized.toLowerCase();
+};
+
 function isPublicRoute(req) {
   const method = (req.method || "").toUpperCase();
-  const path = req.path || req.originalUrl || "";
+  const path = normalizeRequestPath(req.path || req.originalUrl || "");
 
   return PUBLIC_ROUTE_RULES.some((rule) => (
-    rule.method === method && path === rule.path
+    rule.method === method && path === normalizeRequestPath(rule.path)
   ));
 }
 

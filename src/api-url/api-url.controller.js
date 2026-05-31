@@ -1,12 +1,10 @@
-import { PrismaClient } from "@prisma/client";
 import fetch from "node-fetch";
+import prisma from "../config/db.js";
 import {
   FRONTEND_LITERAL_KEYS,
   UPSTREAM_CONFIG_KEYS,
   ensureRuntimeConfigEntries,
 } from "./runtime-config.service.js";
-
-const prisma = new PrismaClient();
 
 function normalizeLookupText(value) {
   return `${value || ""}`
@@ -412,6 +410,26 @@ export const getCategories = async (req, res) => {
 };
 
 export const getFrontendRuntimeConfig = async (req, res) => {
+  const backendBasePath = resolveFrontendBackendBasePath(req);
+  const config = {
+    // Frontend now consumes backend-only proxy URLs.
+    VITE_HSAC_MAIN_URL: withBasePath(backendBasePath, "/mapserver/service/hsacMain"),
+    VITE_HSACGGM_ASSETS_URL: withBasePath(backendBasePath, "/mapserver/service/governmentAssets"),
+    VITE_NHAI_ROADS_URL: withBasePath(backendBasePath, "/mapserver/service/nhaiRoads"),
+    VITE_HARYANA_ROADS_URL: withBasePath(backendBasePath, "/mapserver/service/haryanaRoads"),
+    VITE_HARYANA_BOUNDARY_URL: withBasePath(backendBasePath, "/mapserver/service/haryanaBoundary"),
+    VITE_ARCGIS_GEOCODER_URL: withBasePath(backendBasePath, "/mapserver/service/geocoder"),
+    VITE_ARCGIS_IMAGERY_URL: withBasePath(backendBasePath, "/mapserver/service/imagery"),
+    VITE_ARCGIS_REFERENCE_URL: withBasePath(backendBasePath, "/mapserver/service/reference"),
+    VITE_ARCGIS_TOPO_URL: withBasePath(backendBasePath, "/mapserver/service/topo"),
+    VITE_ARCGIS_STREETS_URL: withBasePath(backendBasePath, "/mapserver/service/streets"),
+    VITE_ASMX_BASE_PATH: withBasePath(backendBasePath, "/mapserver/land-record"),
+    VITE_OWNER_API_ENDPOINT: withBasePath(backendBasePath, "/api-url/owner-search"),
+    VITE_CADASTRAL_HINDI_SEARCH_ENDPOINT: withBasePath(backendBasePath, "/api-url/cadastral-hindi-search"),
+    VITE_ARCGIS_API_KEY: process.env.VITE_ARCGIS_API_KEY || "",
+    VITE_GA_MEASUREMENT_ID: process.env.VITE_GA_MEASUREMENT_ID || "",
+  };
+
   try {
     await ensureRuntimeConfigEntries(prisma);
 
@@ -426,26 +444,6 @@ export const getFrontendRuntimeConfig = async (req, res) => {
       },
     });
 
-    const backendBasePath = resolveFrontendBackendBasePath(req);
-    const config = {
-      // Frontend now consumes backend-only proxy URLs.
-      VITE_HSAC_MAIN_URL: withBasePath(backendBasePath, "/mapserver/service/hsacMain"),
-      VITE_HSACGGM_ASSETS_URL: withBasePath(backendBasePath, "/mapserver/service/governmentAssets"),
-      VITE_NHAI_ROADS_URL: withBasePath(backendBasePath, "/mapserver/service/nhaiRoads"),
-      VITE_HARYANA_ROADS_URL: withBasePath(backendBasePath, "/mapserver/service/haryanaRoads"),
-      VITE_HARYANA_BOUNDARY_URL: withBasePath(backendBasePath, "/mapserver/service/haryanaBoundary"),
-      VITE_ARCGIS_GEOCODER_URL: withBasePath(backendBasePath, "/mapserver/service/geocoder"),
-      VITE_ARCGIS_IMAGERY_URL: withBasePath(backendBasePath, "/mapserver/service/imagery"),
-      VITE_ARCGIS_REFERENCE_URL: withBasePath(backendBasePath, "/mapserver/service/reference"),
-      VITE_ARCGIS_TOPO_URL: withBasePath(backendBasePath, "/mapserver/service/topo"),
-      VITE_ARCGIS_STREETS_URL: withBasePath(backendBasePath, "/mapserver/service/streets"),
-      VITE_ASMX_BASE_PATH: withBasePath(backendBasePath, "/mapserver/land-record"),
-      VITE_OWNER_API_ENDPOINT: withBasePath(backendBasePath, "/api-url/owner-search"),
-      VITE_CADASTRAL_HINDI_SEARCH_ENDPOINT: withBasePath(backendBasePath, "/api-url/cadastral-hindi-search"),
-      VITE_ARCGIS_API_KEY: process.env.VITE_ARCGIS_API_KEY || "",
-      VITE_GA_MEASUREMENT_ID: process.env.VITE_GA_MEASUREMENT_ID || "",
-    };
-
     for (const item of entries) {
       config[item.name] = item.url;
     }
@@ -456,7 +454,11 @@ export const getFrontendRuntimeConfig = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching frontend runtime config:", error.message);
-    res.status(500).json({ error: "Failed to fetch frontend runtime config" });
+    return res.json({
+      message: "Frontend runtime config fallback served",
+      degraded: true,
+      data: config,
+    });
   }
 };
 

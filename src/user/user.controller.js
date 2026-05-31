@@ -623,7 +623,18 @@ export const getPublicLoginInsights = async (req, res) => {
     });
   } catch (error) {
     console.error("Get Public Login Insights Error:", error);
-    return res.status(500).json({ message: "Unable to load login insights" });
+    const nowIso = new Date().toISOString();
+    return res.json({
+      metrics: {
+        totalRegisteredUsers: 0,
+        activeSessions: 0,
+        activeUsers: 0,
+        loggedInToday: 0,
+      },
+      announcements: [],
+      generatedAt: nowIso,
+      degraded: true,
+    });
   }
 };
 

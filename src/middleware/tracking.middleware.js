@@ -1,9 +1,17 @@
 import geoip from "geoip-lite";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../config/db.js";
 import analyticsService from "../services/analyticsService.js";
 import { getRequestDeviceIdentity } from "../utils/device-identity.utils.js";
 
-const prisma = new PrismaClient();
+const shouldSkipPersistentTracking = (req) => {
+  const path = String(req.path || req.originalUrl || "");
+  if (!path) return false;
+
+  // High-frequency map tile traffic can overwhelm DB logging and app pool resources.
+  if (path.startsWith("/mapserver/service/")) return true;
+  if (path === "/mapserver/metadata") return true;
+  return false;
+};
 
 // ✅ Middleware to extract IP address and geolocation
 export const trackingMiddleware = async (req, res, next) => {
@@ -41,9 +49,12 @@ export const trackingMiddleware = async (req, res, next) => {
     console.log("📊 Request Tracking:", req.geoLocation);
 
     // ✅ Save location to database asynchronously (non-blocking)
-    saveLocationLog(req).catch((err) => {
-      console.error("❌ Failed to save location log:", err.message);
-    });
+    // Skip very high-volume endpoints to avoid DB pressure in production.
+    if (!shouldSkipPersistentTracking(req)) {
+      saveLocationLog(req).catch((err) => {
+        console.error("❌ Failed to save location log:", err.message);
+      });
+    }
 
     // ✅ Track API usage in Google Analytics after response completes
     // so statusCode is accurate (avoids status_null events).

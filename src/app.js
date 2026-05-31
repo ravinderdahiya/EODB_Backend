@@ -120,14 +120,20 @@ app.use(session({
 app.use(requireAuthUnlessPublic);
 
 // Routes
-app.use("/user", userRoutes);
-app.use("/otp", otpRoutes);
-app.use("/api-url", apiUrlRoutes);
-app.use("/mapserver", mapserverRoutes);
-app.use("/analytics", analyticsRoutes);
-app.use("/feedback", feedbackRoutes);
-app.use("/vip-users", vipUserRoutes);
-app.use("/map-link", mapLinkRoutes);
+const mountApiRoute = (path, router) => {
+  app.use(path, router);
+  // Extra compatibility for IIS setups that forward subdirectory prefix as-is.
+  app.use(`/eodb_backend${path}`, router);
+};
+
+mountApiRoute("/user", userRoutes);
+mountApiRoute("/otp", otpRoutes);
+mountApiRoute("/api-url", apiUrlRoutes);
+mountApiRoute("/mapserver", mapserverRoutes);
+mountApiRoute("/analytics", analyticsRoutes);
+mountApiRoute("/feedback", feedbackRoutes);
+mountApiRoute("/vip-users", vipUserRoutes);
+mountApiRoute("/map-link", mapLinkRoutes);
 
 // Health Check - no client data in response
 app.get("/health", (req, res) => {

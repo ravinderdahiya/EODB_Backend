@@ -86,11 +86,6 @@ async function getUpstreamRuntimeConfig() {
     }
   }
 
-  const missingKeys = UPSTREAM_CONFIG_KEYS.filter((key) => !config[key]);
-  if (missingKeys.length) {
-    throw new Error(`Missing active upstream config keys: ${missingKeys.join(', ')}`);
-  }
-
   return config;
 }
 
