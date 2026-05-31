@@ -206,8 +206,8 @@ export const sendOtp = async(req, res) => {
             });
         } catch (smsError) {
             console.error("SMS API Error:", smsError.message);
-            res.json({
-                message: "OTP created (SMS delivery pending)",
+            res.status(502).json({
+                message: "OTP created but SMS delivery failed",
                 phone,
                 smsSent: false,
                 warning: "OTP saved but SMS delivery failed. Contact support.",
@@ -287,8 +287,8 @@ export const resendOtp = async(req, res) => {
             });
         } catch (smsError) {
             console.error("SMS API Error:", smsError.message);
-            res.json({
-                message: "OTP resent (SMS delivery pending)",
+            res.status(502).json({
+                message: "OTP resent but SMS delivery failed",
                 phone,
                 smsSent: false,
                 warning: "OTP saved but SMS delivery failed. Contact support.",
