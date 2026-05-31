@@ -39,7 +39,7 @@ jobs:
           cache: npm
 
       - name: Deploy backend
-        shell: pwsh
+        shell: powershell
         run: >
           .\.github\scripts\deploy-backend.ps1
           -SourceDir "${{ github.workspace }}"
