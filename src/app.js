@@ -33,13 +33,28 @@ const useSecureCookies = () => (
 
 const isHttpsRequest = (req) => {
   const forwardedProto = String(req.headers["x-forwarded-proto"] || "")
-    .split(",")[0]
-    .trim()
     .toLowerCase();
   const frontEndHttps = String(req.headers["front-end-https"] || "").toLowerCase();
+  const forwardedSsl = String(req.headers["x-forwarded-ssl"] || "").toLowerCase();
+  const originalProto = String(req.headers["x-original-proto"] || "").toLowerCase();
+  const urlScheme = String(req.headers["x-url-scheme"] || "").toLowerCase();
+  const cfVisitor = String(req.headers["cf-visitor"] || "").toLowerCase();
   const arrSsl = req.headers["x-arr-ssl"];
+  const protoList = forwardedProto
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const isForwardedHttps = protoList.includes("https");
+  const isCloudflareHttps = cfVisitor.includes('"scheme":"https"');
 
-  return req.secure || forwardedProto === "https" || frontEndHttps === "on" || Boolean(arrSsl);
+  return req.secure
+    || isForwardedHttps
+    || frontEndHttps === "on"
+    || forwardedSsl === "on"
+    || originalProto === "https"
+    || urlScheme === "https"
+    || isCloudflareHttps
+    || Boolean(arrSsl);
 };
 
 // IIS virtual directory fix

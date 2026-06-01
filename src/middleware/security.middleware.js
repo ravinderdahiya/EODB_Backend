@@ -170,7 +170,9 @@ export const requestLogger = (req, res, next) => {
 };
 
 // CORS configuration — origins driven by env var
-// In production: set ALLOWED_ORIGINS="https://hsac.org.in,https://www.hsac.org.in" in .env
+// In production: set ALLOWED_ORIGINS in .env (include all served frontend domains)
+// Example:
+// ALLOWED_ORIGINS=https://hsac.org.in,https://www.hsac.org.in,https://harsac.online,https://www.harsac.online
 // In development: localhost origins allowed automatically
 const normalizeOrigin = (value) => String(value || "").trim().replace(/\/+$/, "");
 const isDevLoopbackOrigin = (origin) => {
@@ -186,6 +188,8 @@ const isDevLoopbackOrigin = (origin) => {
 const defaultProductionOrigins = [
   "https://hsac.org.in",
   "https://www.hsac.org.in",
+  "https://harsac.online",
+  "https://www.harsac.online",
 ];
 
 const productionOrigins = process.env.ALLOWED_ORIGINS
