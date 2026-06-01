@@ -26,7 +26,7 @@ jobs:
       - iis
     env:
       IIS_BACKEND_PATH: D:\Host\Application\msme_backend\eodb_backend
-      IIS_BACKEND_APP_POOL: EODB_Backend
+      IIS_BACKEND_APP_POOL: eodb_backend
       RUN_DB_PUSH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_db_push || 'false' }}
     steps:
       - name: Checkout
