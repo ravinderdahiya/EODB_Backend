@@ -143,6 +143,8 @@ export const checkAccountLock = async (req, res, next) => {
   }
 };
 
+const SLOW_REQUEST_THRESHOLD_MS = Number(process.env.SLOW_REQUEST_THRESHOLD_MS || 500);
+
 // ✅ Middleware to log all API requests
 export const requestLogger = (req, res, next) => {
   const start = Date.now();
@@ -158,10 +160,17 @@ export const requestLogger = (req, res, next) => {
       duration: `${duration}ms`,
       userAgent: req.get("user-agent"),
     };
-    
+
+    if (duration >= SLOW_REQUEST_THRESHOLD_MS) {
+      console.warn("🐢 Slow API Request:", {
+        ...log,
+        thresholdMs: SLOW_REQUEST_THRESHOLD_MS,
+      });
+    }
+
     if (res.statusCode >= 400) {
       console.error("⚠️  API Error:", log);
-    } else {
+    } else if (duration < SLOW_REQUEST_THRESHOLD_MS) {
       console.log("✅ API Request:", log);
     }
   });
@@ -383,8 +392,8 @@ export const createLoginSession = async (
     const normalizedDeviceIdentity = normalizeDeviceIdentity(deviceIdentity);
     const normalizedMobile = mobile ? String(mobile).replace(/\D/g, "").slice(-10) : null;
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    const session = await prisma.loginSessionLog.create({
+    // Create DB record asynchronously so API response is not blocked by disk/DB latency.
+    prisma.loginSessionLog.create({
       data: {
         userId,
         sessionId,
@@ -404,10 +413,14 @@ export const createLoginSession = async (
         loginAt: new Date(),
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
       },
+    }).then((created) => {
+      console.log("✅ Login Session Created (async):", created.id);
+    }).catch((err) => {
+      console.error("❌ Create Login Session Error (async):", err.message);
     });
 
-    console.log("✅ Login Session Created:", session.id);
-    return session;
+    // Return immediate lightweight session object (session id generated client-side)
+    return { id: sessionId, sessionId, userId, loginAt: new Date() };
   } catch (error) {
     console.error("❌ Create Login Session Error:", error.message);
     return null;

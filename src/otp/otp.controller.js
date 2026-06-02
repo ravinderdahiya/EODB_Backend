@@ -53,7 +53,7 @@ const formatSmsPhone = (normalizedPhone) => {
 };
 
 const ensureUserForPhone = async(phone) => {
-    let user = await prisma.user.findFirst({ where: { mobile: phone } });
+    let user = await prisma.user.findUnique({ where: { mobile: phone } });
 
     const hashedPassword = await bcrypt.hash(generateOpaquePasswordSeed(phone), 10);
 

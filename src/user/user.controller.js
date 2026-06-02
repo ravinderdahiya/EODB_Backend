@@ -148,7 +148,8 @@ const buildPublicAnnouncements = ({
 
 const recordAuthSuccessLog = async (req, user, type = "login_success") => {
   try {
-    await prisma.loginSessionLog.create({
+    // Fire-and-forget to avoid delaying response; log failures to server logs.
+    prisma.loginSessionLog.create({
       data: {
         userId: user?.id || null,
         ipAddress: req.clientIp || getIP(req) || "unknown",
@@ -163,6 +164,10 @@ const recordAuthSuccessLog = async (req, user, type = "login_success") => {
         status: "success",
         loginAt: new Date(),
       },
+    }).then(() => {
+      // intentionally empty on success
+    }).catch((error) => {
+      console.error("Auth success log insert failed (async):", error.message);
     });
   } catch (error) {
     console.error("Auth success log insert failed:", error.message);
@@ -173,7 +178,8 @@ const updateUserLastLoginSnapshot = async (req, userId) => {
   if (!userId) return;
 
   try {
-    await prisma.user.update({
+    // Update snapshot asynchronously so it does not block login response
+    prisma.user.update({
       where: { id: userId },
       data: {
         lastLoginIp: normalizeIpValue(req.clientIp || getIP(req)),
@@ -181,6 +187,10 @@ const updateUserLastLoginSnapshot = async (req, userId) => {
         lastLoginLng: req.geoLocation?.longitude ?? null,
         lastLoginAt: new Date(),
       },
+    }).then(() => {
+      // no-op on success
+    }).catch((error) => {
+      console.error("Last login snapshot update failed (async):", error.message);
     });
   } catch (error) {
     console.error("Last login snapshot update failed:", error.message);

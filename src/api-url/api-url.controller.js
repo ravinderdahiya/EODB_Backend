@@ -1,5 +1,6 @@
 import fetch from "node-fetch";
 import prisma from "../config/db.js";
+import { getCache, setCache, incrCache } from "../utils/cache.js";
 import {
   FRONTEND_LITERAL_KEYS,
   UPSTREAM_CONFIG_KEYS,
@@ -235,6 +236,8 @@ export const createApiUrl = async (req, res) => {
       message: "API URL created successfully",
       data: apiUrl,
     });
+    // bump version to invalidate caches
+    try { await setCache("apiUrls_version", String(Date.now()), 0); } catch (e) { /* ignore */ }
   } catch (error) {
     console.error("❌ Error creating API URL:", error.message);
     res.status(500).json({ error: "Failed to create API URL" });
@@ -256,12 +259,17 @@ export const getAllApiUrls = async (req, res) => {
       where.isActive = active === "true";
     }
 
-    const apiUrls = await prisma.apiUrl.findMany({
-      where,
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+    // Use versioned cache key to allow easy invalidation after updates
+    const version = (await getCache("apiUrls_version")) || "0";
+    const cacheKey = `apiUrls:${version}:${category || "all"}:${active !== undefined ? active : "any"}`;
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.json({ message: "API URLs fetched successfully (cached)", count: cached.length, data: cached });
+    }
+
+    const apiUrls = await prisma.apiUrl.findMany({ where, orderBy: { createdAt: "desc" } });
+    // cache result for 5 minutes
+    await setCache(cacheKey, apiUrls, 300);
 
     res.json({
       message: "API URLs fetched successfully",
@@ -326,6 +334,7 @@ export const updateApiUrl = async (req, res) => {
       message: "API URL updated successfully",
       data: apiUrl,
     });
+    try { await setCache("apiUrls_version", String(Date.now()), 0); } catch (e) { }
   } catch (error) {
     console.error("❌ Error updating API URL:", error.message);
     res.status(500).json({ error: "Failed to update API URL" });
@@ -352,6 +361,7 @@ export const deleteApiUrl = async (req, res) => {
     res.json({
       message: "API URL deleted successfully",
     });
+    try { await setCache("apiUrls_version", String(Date.now()), 0); } catch (e) { }
   } catch (error) {
     console.error("❌ Error deleting API URL:", error.message);
     res.status(500).json({ error: "Failed to delete API URL" });
@@ -382,6 +392,7 @@ export const toggleApiUrlStatus = async (req, res) => {
       message: `API URL ${apiUrl.isActive ? "activated" : "deactivated"} successfully`,
       data: apiUrl,
     });
+    try { await setCache("apiUrls_version", String(Date.now()), 0); } catch (e) { }
   } catch (error) {
     console.error("❌ Error toggling API URL status:", error.message);
     res.status(500).json({ error: "Failed to toggle API URL status" });
@@ -391,13 +402,14 @@ export const toggleApiUrlStatus = async (req, res) => {
 // ✅ Get all unique categories
 export const getCategories = async (req, res) => {
   try {
-    const categories = await prisma.apiUrl.findMany({
-      select: { category: true },
-      distinct: ["category"],
-      where: {
-        category: { not: null },
-      },
-    });
+    const cacheKey = "apiCategories_v1";
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.json({ message: "Categories fetched successfully (cached)", data: cached });
+    }
+
+    const categories = await prisma.apiUrl.findMany({ select: { category: true }, distinct: ["category"], where: { category: { not: null } } });
+    await setCache(cacheKey, categories.map((c) => c.category).filter(Boolean), 300);
 
     res.json({
       message: "Categories fetched successfully",
@@ -431,18 +443,20 @@ export const getFrontendRuntimeConfig = async (req, res) => {
   };
 
   try {
+    // versioned cache key for runtime config
+    const version = (await getCache("apiUrls_version")) || "0";
+    const cacheKey = `frontendRuntimeConfig:${version}`;
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.json({ message: "Frontend runtime config fetched successfully (cached)", data: { ...config, ...cached } });
+    }
+
     await ensureRuntimeConfigEntries(prisma);
 
-    const entries = await prisma.apiUrl.findMany({
-      where: {
-        name: { in: FRONTEND_LITERAL_KEYS },
-        isActive: true,
-      },
-      select: {
-        name: true,
-        url: true,
-      },
-    });
+    const entries = await prisma.apiUrl.findMany({ where: { name: { in: FRONTEND_LITERAL_KEYS }, isActive: true }, select: { name: true, url: true } });
+    const dynamic = {};
+    for (const item of entries) dynamic[item.name] = item.url;
+    await setCache(cacheKey, dynamic, 300);
 
     for (const item of entries) {
       config[item.name] = item.url;

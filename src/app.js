@@ -1,5 +1,7 @@
 import express from "express";
 import session from "express-session";
+import connectRedis from "connect-redis";
+import { createClient } from "redis";
 import cors from "cors";
 import dotenv from "dotenv";
 
@@ -30,6 +32,33 @@ app.set("trust proxy", 1);
 const useSecureCookies = () => (
   String(process.env.ALLOW_INSECURE_COOKIES || "").toLowerCase() !== "true"
 );
+
+const createRedisSessionStore = () => {
+  if (!process.env.REDIS_URL) return null;
+
+  const RedisStore = connectRedis(session);
+  const redisClient = createClient({
+    url: process.env.REDIS_URL,
+    socket: {
+      tls: String(process.env.REDIS_TLS || "").toLowerCase() === "true",
+    },
+  });
+
+  redisClient.on("error", (error) => {
+    console.error("Redis session store error:", error);
+  });
+
+  redisClient.connect().catch((error) => {
+    console.error("Failed to connect Redis session client:", error);
+  });
+
+  return new RedisStore({
+    client: redisClient,
+    prefix: "sess:",
+    ttl: 24 * 60 * 60,
+    disableTouch: false,
+  });
+};
 
 const isHttpsRequest = (req) => {
   const forwardedProto = String(req.headers["x-forwarded-proto"] || "")
@@ -119,7 +148,15 @@ app.use(generalLimiter);
 app.use(checkAccountLock);
 
 // Session Configuration
+const sessionStore = createRedisSessionStore();
+
+if (process.env.NODE_ENV === "production" && !sessionStore) {
+  console.error("FATAL: REDIS_URL is required in production for session storage.");
+  process.exit(1);
+}
+
 app.use(session({
+  store: sessionStore || undefined,
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
