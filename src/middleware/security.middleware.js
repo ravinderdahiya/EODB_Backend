@@ -252,10 +252,14 @@ export const recordLoginAttempt = async (
 ) => {
   try {
     const normalizedPhone = String(phone).replace(/\D/g, '').slice(-10);
+    const phoneCandidates = [normalizedPhone, `91${normalizedPhone}`, `+91${normalizedPhone}`]
+      .filter(Boolean);
     const normalizedDeviceIdentity = normalizeDeviceIdentity(deviceIdentity);
 
     const user = await prisma.user.findFirst({
-      where: { mobile: normalizedPhone }
+      where: {
+        OR: phoneCandidates.map((mobileValue) => ({ mobile: mobileValue })),
+      },
     });
 
     if (!user) {
@@ -367,16 +371,24 @@ export const recordLoginAttempt = async (
 };
 
 // ✅ Helper function to create login session
-export const createLoginSession = async (userId, ip, geoLocation, userAgent = null, deviceIdentity = {}) => {
+export const createLoginSession = async (
+  userId,
+  ip,
+  geoLocation,
+  userAgent = null,
+  deviceIdentity = {},
+  mobile = null,
+) => {
   try {
     const normalizedDeviceIdentity = normalizeDeviceIdentity(deviceIdentity);
+    const normalizedMobile = mobile ? String(mobile).replace(/\D/g, "").slice(-10) : null;
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const session = await prisma.loginSessionLog.create({
       data: {
         userId,
         sessionId,
-        ipAddress: ip,
+        ipAddress: ip || geoLocation?.ip || "unknown",
         latitude: geoLocation?.latitude || null,
         longitude: geoLocation?.longitude || null,
         country: geoLocation?.country || null,
@@ -386,6 +398,7 @@ export const createLoginSession = async (userId, ip, geoLocation, userAgent = nu
         deviceId: normalizedDeviceIdentity.deviceId,
         deviceImei: normalizedDeviceIdentity.deviceImei,
         deviceInfo: normalizedDeviceIdentity.deviceInfo,
+        mobile: normalizedMobile,
         type: "session_start",
         status: "active",
         loginAt: new Date(),

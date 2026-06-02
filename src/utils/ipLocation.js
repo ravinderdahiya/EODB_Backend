@@ -8,7 +8,7 @@ export const getIPLocation = async (ip) => {
     return {
       latitude: data.lat,
       longitude: data.lon,
-      city: data.city,
+      city: data.city || data.regionName || null,
       country: data.country
     };
   } catch (error) {

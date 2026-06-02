@@ -10,6 +10,16 @@ const getIP = (req) => {
   return req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 };
 
+const normalizeIpValue = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  let ip = raw.includes(",") ? raw.split(",")[0].trim() : raw;
+  if (ip.startsWith("::ffff:")) ip = ip.slice(7);
+  if (ip === "::1") ip = "127.0.0.1";
+  return ip || null;
+};
+
 const safeString = (value, maxLength = 120) => {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -136,6 +146,47 @@ const buildPublicAnnouncements = ({
     .slice(0, 4);
 };
 
+const recordAuthSuccessLog = async (req, user, type = "login_success") => {
+  try {
+    await prisma.loginSessionLog.create({
+      data: {
+        userId: user?.id || null,
+        ipAddress: req.clientIp || getIP(req) || "unknown",
+        latitude: req.geoLocation?.latitude || null,
+        longitude: req.geoLocation?.longitude || null,
+        country: req.geoLocation?.country || null,
+        city: req.geoLocation?.city || null,
+        timezone: req.geoLocation?.timezone || null,
+        userAgent: req.headers["user-agent"] || null,
+        mobile: user?.mobile ? String(user.mobile).replace(/\D/g, "").slice(-10) : null,
+        type,
+        status: "success",
+        loginAt: new Date(),
+      },
+    });
+  } catch (error) {
+    console.error("Auth success log insert failed:", error.message);
+  }
+};
+
+const updateUserLastLoginSnapshot = async (req, userId) => {
+  if (!userId) return;
+
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        lastLoginIp: normalizeIpValue(req.clientIp || getIP(req)),
+        lastLoginLat: req.geoLocation?.latitude ?? null,
+        lastLoginLng: req.geoLocation?.longitude ?? null,
+        lastLoginAt: new Date(),
+      },
+    });
+  } catch (error) {
+    console.error("Last login snapshot update failed:", error.message);
+  }
+};
+
 const verifyGoogleIdToken = async (idToken) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
@@ -251,6 +302,9 @@ export const login = async (req, res) => {
       ip: ip
     };
 
+    await updateUserLastLoginSnapshot(req, user.id);
+    await recordAuthSuccessLog(req, user, "login_success");
+
     res.cookie("auth_token", token, getAuthCookieOptions());
 
     res.json(buildAuthSuccessPayload({
@@ -315,6 +369,9 @@ export const googleLogin = async (req, res) => {
       role: user.role,
       ip: ip
     };
+
+    await updateUserLastLoginSnapshot(req, user.id);
+    await recordAuthSuccessLog(req, user, "google_login_success");
 
     res.cookie("auth_token", token, getAuthCookieOptions());
 
@@ -406,6 +463,9 @@ export const adminLogin = async (req, res) => {
       ip: ip
     };
 
+    await updateUserLastLoginSnapshot(req, admin.id);
+    await recordAuthSuccessLog(req, admin, "admin_login_success");
+
     res.cookie("auth_token", token, getAuthCookieOptions());
 
     res.json(buildAuthSuccessPayload({
@@ -454,9 +514,24 @@ export const getLoginLogs = async (req, res) => {
     const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 5), 50);
     const skip = (page - 1) * pageSize;
 
-    const totalCount = await prisma.loginSessionLog.count();
+    const loginEventTypes = [
+      "login_success",
+      "login_failed",
+      "session_start",
+      "google_login_success",
+      "admin_login_success",
+    ];
+
+    const totalCount = await prisma.loginSessionLog.count({
+      where: {
+        type: { in: loginEventTypes },
+      },
+    });
 
     const logs = await prisma.loginSessionLog.findMany({
+      where: {
+        type: { in: loginEventTypes },
+      },
       orderBy: { createdAt: "desc" },
       skip,
       take: pageSize,
@@ -467,6 +542,7 @@ export const getLoginLogs = async (req, res) => {
             fullname: true,
             email: true,
             role: true,
+            mobile: true,
           },
         },
       },
@@ -481,8 +557,8 @@ export const getLoginLogs = async (req, res) => {
 
       return {
       id: entry.id,
-      userId: entry.user?.id ? `USR-${entry.user.id.toString().padStart(4, "0")}` : entry.mobile || "Unknown",
-      name: entry.user?.fullname || entry.mobile || "Unknown",
+      userId: entry.user?.id ? `USR-${entry.user.id.toString().padStart(4, "0")}` : entry.mobile || entry.user?.mobile || "Unknown",
+      name: entry.user?.fullname || entry.mobile || entry.user?.mobile || "Unknown",
       email: entry.user?.email || "-",
       role: entry.user?.role || "-",
       timestamp: entry.loginAt
@@ -507,7 +583,7 @@ export const getLoginLogs = async (req, res) => {
       deviceId: entry.deviceId || "-",
       deviceImei: entry.deviceImei || "-",
       deviceInfo: entry.deviceInfo || "-",
-      mobile: entry.mobile || "-",
+      mobile: entry.mobile || entry.user?.mobile || "-",
       city: entry.city || "-",
       country: entry.country || "-",
       latitude: entry.latitude != null ? entry.latitude : null,

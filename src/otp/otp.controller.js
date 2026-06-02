@@ -90,7 +90,14 @@ const issueAuthenticatedLogin = async({ req, res, phone, user, message, vipLogin
 
     await recordLoginAttempt(phone, true, req.clientIp, req.geoLocation, userAgent, deviceIdentity);
 
-    const session = await createLoginSession(user.id, req.clientIp, req.geoLocation, userAgent, deviceIdentity);
+    const session = await createLoginSession(
+        user.id,
+        req.clientIp,
+        req.geoLocation,
+        userAgent,
+        deviceIdentity,
+        phone,
+    );
 
     analyticsService.trackAuthEvent(vipLogin ? "vip_login_success" : "login_success", user.id, null, {});
 
