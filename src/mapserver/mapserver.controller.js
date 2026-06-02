@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
 import prisma from '../config/db.js';
+import { getCache, setCache } from '../utils/cache.js';
 import { logSecurityEvent } from '../services/auditLogService.js';
 import {
   UPSTREAM_CONFIG_KEYS,
@@ -68,6 +69,13 @@ function wrapWithDotNetProxyIfNeeded(targetUrl, config, { serviceKey } = {}) {
 async function getUpstreamRuntimeConfig() {
   await ensureRuntimeConfigEntries(prisma);
 
+  const version = (await getCache('apiUrls_version')) || '0';
+  const cacheKey = `upstreamRuntimeConfig:${version}`;
+  const cached = await getCache(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const entries = await prisma.apiUrl.findMany({
     where: {
       name: { in: UPSTREAM_CONFIG_KEYS },
@@ -86,6 +94,7 @@ async function getUpstreamRuntimeConfig() {
     }
   }
 
+  await setCache(cacheKey, config, 300);
   return config;
 }
 
@@ -385,6 +394,13 @@ export const getMapServerMetadata = async (req, res) => {
       return res.status(500).json({ error: 'HSAC MapServer URL is not configured' });
     }
 
+    const version = (await getCache('apiUrls_version')) || '0';
+    const cacheKey = `mapserverMetadata:${version}`;
+    const cachedMeta = await getCache(cacheKey);
+    if (cachedMeta) {
+      return res.json({ message: 'MapServer metadata fetched successfully (cached)', ...cachedMeta });
+    }
+
     const upstreamUrl = `${hsacMain.replace(/\/+$/, '')}?f=json`;
     const targetUrl = wrapWithDotNetProxyIfNeeded(upstreamUrl, config, { serviceKey: 'hsacMain' });
     const response = await fetch(targetUrl, {
@@ -399,12 +415,14 @@ export const getMapServerMetadata = async (req, res) => {
     }
 
     const data = await response.json();
-
-    res.json({
+    const payload = {
       layers: data.layers || [],
       spatialReference: data.spatialReference || {},
       documentInfo: data.documentInfo || {},
-    });
+    };
+
+    await setCache(cacheKey, payload, 300);
+    res.json(payload);
   } catch (error) {
     console.error('Metadata request error:', error);
 

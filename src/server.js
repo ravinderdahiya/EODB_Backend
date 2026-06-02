@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 import prisma from "./config/db.js";
 import { ensureRuntimeConfigEntries } from "./api-url/runtime-config.service.js";
+import { closeCacheConnection } from "./utils/cache.js";
 
 // ── Startup secret validation — crash early rather than run insecure ──────────
 const REQUIRED_ENV = {
@@ -27,7 +28,7 @@ if (startupError) {
   process.exit(1);
 }
 
-import app from "./app.js";
+import app, { disconnectRedisSessionClient } from "./app.js";
 
 app.get("/", (req, res) => {
   res.send("API working");
@@ -35,8 +36,33 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 8080;
 
+const shutdown = async (signal) => {
+  console.log(`Shutdown requested (${signal}). Closing resources...`);
+  try {
+    await disconnectRedisSessionClient();
+    await closeCacheConnection();
+    await prisma.$disconnect();
+    console.log("Shutdown complete.");
+    process.exit(0);
+  } catch (error) {
+    console.error("Error during shutdown:", error);
+    process.exit(1);
+  }
+};
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", error);
+  shutdown("uncaughtException");
+});
+
 async function startServer() {
   try {
+    await prisma.$connect();
     const seeded = await ensureRuntimeConfigEntries(prisma);
     console.log(`Runtime config seed check complete (created: ${seeded.created}/${seeded.total})`);
   } catch (error) {

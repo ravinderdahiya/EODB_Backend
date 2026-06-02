@@ -2,6 +2,7 @@ import express from "express";
 import session from "express-session";
 import connectRedis from "connect-redis";
 import { createClient } from "redis";
+import compression from "compression";
 import cors from "cors";
 import dotenv from "dotenv";
 
@@ -29,6 +30,20 @@ const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 
+let redisSessionClient = null;
+
+export const disconnectRedisSessionClient = async () => {
+  if (redisSessionClient && redisSessionClient.isOpen) {
+    try {
+      await redisSessionClient.disconnect();
+      console.log("Redis session client disconnected gracefully.");
+    } catch (disconnectError) {
+      console.error("Error disconnecting Redis session client:", disconnectError.message);
+    }
+    redisSessionClient = null;
+  }
+};
+
 const useSecureCookies = () => (
   String(process.env.ALLOW_INSECURE_COOKIES || "").toLowerCase() !== "true"
 );
@@ -37,23 +52,24 @@ const createRedisSessionStore = () => {
   if (!process.env.REDIS_URL) return null;
 
   const RedisStore = connectRedis(session);
-  const redisClient = createClient({
+  redisSessionClient = createClient({
     url: process.env.REDIS_URL,
     socket: {
       tls: String(process.env.REDIS_TLS || "").toLowerCase() === "true",
+      reconnectStrategy: (retries) => Math.min(retries * 50, 500),
     },
   });
 
-  redisClient.on("error", (error) => {
+  redisSessionClient.on("error", (error) => {
     console.error("Redis session store error:", error);
   });
 
-  redisClient.connect().catch((error) => {
+  redisSessionClient.connect().catch((error) => {
     console.error("Failed to connect Redis session client:", error);
   });
 
   return new RedisStore({
-    client: redisClient,
+    client: redisSessionClient,
     prefix: "sess:",
     ttl: 24 * 60 * 60,
     disableTouch: false,
@@ -119,12 +135,16 @@ app.use((req, res, next) => {
 // Security Headers
 app.use(securityHeaders);
 
+// Compression for dynamic responses
+app.use(compression());
+
 // CORS Configuration
 app.use(cors(corsOptions));
 
-// Body Parser
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body Parser with safe payload limits
+const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || "100kb";
+app.use(express.json({ limit: requestBodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: requestBodyLimit }));
 
 // Prevent API response caching for dynamic/sensitive endpoints.
 app.use((req, res, next) => {

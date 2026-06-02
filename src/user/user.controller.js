@@ -433,18 +433,21 @@ export const adminLogin = async (req, res) => {
       return res.status(400).json({ message: "Admin ID and password required" });
     }
 
-    // Find admin user by email/adminId and role (admin or superadmin)
-    const admin = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: adminId },
-          { fullname: adminId }
-        ],
-        role: { in: ["admin", "superadmin"] }
-      }
+    // Find admin user by email or full name, preferring the indexed email lookup first.
+    let admin = await prisma.user.findUnique({
+      where: { email: adminId },
     });
 
     if (!admin) {
+      admin = await prisma.user.findFirst({
+        where: {
+          fullname: adminId,
+          role: { in: ["admin", "superadmin"] },
+        },
+      });
+    }
+
+    if (!admin || !["admin", "superadmin"].includes(admin.role)) {
       return res.status(404).json({ message: "Admin not found" });
     }
 

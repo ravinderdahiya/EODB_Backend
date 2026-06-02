@@ -5,13 +5,25 @@ let redisClient = null;
 const localCache = new Map();
 
 const connectRedis = async () => {
-  if (!REDIS_URL || redisClient) return;
+  if (!REDIS_URL || redisClient?.isOpen) return;
   try {
     redisClient = createClient({ url: REDIS_URL });
     redisClient.on("error", (err) => console.error("Redis error:", err.message));
     await redisClient.connect();
   } catch (err) {
     console.error("Failed to connect Redis client:", err.message);
+    redisClient = null;
+  }
+};
+
+export const closeCacheConnection = async () => {
+  if (redisClient && redisClient.isOpen) {
+    try {
+      await redisClient.disconnect();
+      console.log("Cache Redis client disconnected gracefully.");
+    } catch (err) {
+      console.error("Error disconnecting cache Redis client:", err.message);
+    }
     redisClient = null;
   }
 };

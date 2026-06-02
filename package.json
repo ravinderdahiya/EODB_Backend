@@ -23,6 +23,7 @@
     "@prisma/client": "^6.19.3",
     "axios": "^1.15.2",
     "bcrypt": "^6.0.0",
+    "compression": "^1.8.1",
     "connect-redis": "^7.1.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
@@ -31,12 +32,12 @@
     "express-session": "^1.19.0",
     "geoip-lite": "^2.0.1",
     "helmet": "^8.1.0",
-    "redis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
     "node-fetch": "^3.3.2",
     "nodemailer": "^8.0.5",
     "otp-generator": "^4.0.1",
     "prisma": "^6.19.3",
+    "redis": "^6.0.0",
     "universal-analytics": "^0.5.3"
   },
   "devDependencies": {

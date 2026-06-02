@@ -74,6 +74,13 @@ function getMissingHindiLandFields(hints) {
 async function getUpstreamConfigMap() {
   await ensureRuntimeConfigEntries(prisma);
 
+  const version = (await getCache("apiUrls_version")) || "0";
+  const cacheKey = `upstreamConfigMap:${version}`;
+  const cached = await getCache(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const entries = await prisma.apiUrl.findMany({
     where: {
       name: { in: UPSTREAM_CONFIG_KEYS },
@@ -90,6 +97,8 @@ async function getUpstreamConfigMap() {
       config[key] = value;
     }
   });
+
+  await setCache(cacheKey, config, 300);
   return config;
 }
 

@@ -217,7 +217,7 @@ const resolveUserContext = async ({ userId, mobile, role }) => {
     if (mobileCandidates.length) {
       resolvedUser = await prisma.user.findFirst({
         where: {
-          OR: mobileCandidates.map((candidate) => ({ mobile: candidate })),
+          mobile: { in: mobileCandidates },
         },
         select: { id: true, mobile: true, role: true },
       });

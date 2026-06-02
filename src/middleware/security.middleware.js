@@ -267,7 +267,7 @@ export const recordLoginAttempt = async (
 
     const user = await prisma.user.findFirst({
       where: {
-        OR: phoneCandidates.map((mobileValue) => ({ mobile: mobileValue })),
+        mobile: { in: phoneCandidates },
       },
     });
 
