@@ -112,14 +112,6 @@ function resolveServiceBaseUrl(serviceKey, config) {
       return config.VITE_HARYANA_BOUNDARY_URL;
     case 'geocoder':
       return config.VITE_ARCGIS_GEOCODER_URL;
-    case 'imagery':
-      return config.VITE_ARCGIS_IMAGERY_URL;
-    case 'reference':
-      return config.VITE_ARCGIS_REFERENCE_URL;
-    case 'topo':
-      return config.VITE_ARCGIS_TOPO_URL;
-    case 'streets':
-      return config.VITE_ARCGIS_STREETS_URL;
     default:
       return null;
   }

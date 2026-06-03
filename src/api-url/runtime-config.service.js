@@ -8,10 +8,6 @@ export const UPSTREAM_CONFIG_KEYS = [
   "VITE_HSACGGM_ASSETS_URL",
   "VITE_NHAI_ROADS_URL",
   "VITE_HARYANA_ROADS_URL",
-  "VITE_ARCGIS_IMAGERY_URL",
-  "VITE_ARCGIS_REFERENCE_URL",
-  "VITE_ARCGIS_TOPO_URL",
-  "VITE_ARCGIS_STREETS_URL",
   "VITE_OWNER_SEARCH_UPSTREAM_URL",
 ];
 
@@ -42,14 +38,6 @@ function getUpstreamConfigDefaults() {
       "https://onemapggm.gmda.gov.in/server/rest/services/NHAI_All/MapServer",
     VITE_HARYANA_ROADS_URL:
       "https://hsacggm.in/server/rest/services/Onemap_Haryana/Haryana_Roads/MapServer",
-    VITE_ARCGIS_IMAGERY_URL:
-      "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer",
-    VITE_ARCGIS_REFERENCE_URL:
-      "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer",
-    VITE_ARCGIS_TOPO_URL:
-      "https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer",
-    VITE_ARCGIS_STREETS_URL:
-      "https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer",
     VITE_OWNER_SEARCH_UPSTREAM_URL:
       process.env.OWNER_API_ENDPOINT ||
       process.env.VITE_OWNER_SEARCH_UPSTREAM_URL ||
