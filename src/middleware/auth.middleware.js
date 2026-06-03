@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import prisma from "../config/db.js";
 
 // Read auth_token from httpOnly cookie (no cookie-parser dep needed)
 const getCookieToken = (req) => {
@@ -52,7 +53,7 @@ function isPublicRoute(req) {
   ));
 }
 
-export const authMiddleware = (req, res, next) => {
+export const authMiddleware = async (req, res, next) => {
   // Authorization header takes priority; cookie works as fallback
   const token = req.headers.authorization?.split(" ")[1] || getCookieToken(req);
 
@@ -62,9 +63,35 @@ export const authMiddleware = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || process.env.AUTH_SECRET || "defaultsecret");
+    const sessionId = decoded.sessionId || decoded.sid;
+
+    if (!sessionId) {
+      return res.status(401).json({ message: "Session expired. Please login again." });
+    }
+
+    const activeSession = await prisma.loginSessionLog.findFirst({
+      where: {
+        sessionId,
+        userId: decoded.id,
+        type: "session_start",
+        status: "active",
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      select: { id: true, sessionId: true },
+    });
+
+    if (!activeSession) {
+      return res.status(401).json({ message: "Session expired. Please login again." });
+    }
+
     req.user = decoded;
+    req.authSession = activeSession;
     next();
-  } catch {
+  } catch (error) {
+    if (error?.name === "TokenExpiredError") {
+      return res.status(401).json({ message: "Session expired. Please login again." });
+    }
+
     res.status(401).json({ message: "Invalid or expired token" });
   }
 };

@@ -2,6 +2,8 @@ import prisma from "../config/db.js"
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import fetch from "node-fetch"
+import { createLoginSession } from "../middleware/security.middleware.js"
+import { getRequestDeviceIdentity } from "../utils/device-identity.utils.js"
 
 const ADMIN_ROLES = new Set(["admin", "superadmin"]);
 
@@ -78,6 +80,33 @@ const getAuthCookieOptions = () => ({
   maxAge: 24 * 60 * 60 * 1000,
   path: "/",
 });
+
+const createAuthenticatedSession = (req, user) => (
+  createLoginSession(
+    user.id,
+    req.clientIp || getIP(req),
+    req.geoLocation,
+    req.headers["user-agent"] || null,
+    getRequestDeviceIdentity(req),
+    user.mobile,
+  )
+);
+
+const signAuthToken = (user, session) => {
+  const sessionId = session?.sessionId || session?.id;
+  return jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      mobile: user.mobile,
+      role: user.role,
+      sessionId,
+      sid: sessionId,
+    },
+    process.env.JWT_SECRET || process.env.AUTH_SECRET || "defaultsecret",
+    { expiresIn: "1d" }
+  );
+};
 
 const buildAuthSuccessPayload = ({ message, token, user }) => ({
   message,
@@ -294,21 +323,21 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: "Wrong password" })
     }
 
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role
-      },
-      process.env.JWT_SECRET || process.env.AUTH_SECRET || "defaultsecret",
-      { expiresIn: "1d" }
-    )
+    const session = await createAuthenticatedSession(req, user);
+
+    if (!session?.sessionId) {
+      return res.status(500).json({ message: "Unable to create login session" });
+    }
+
+    const token = signAuthToken(user, session)
 
     const ip = getIP(req);
 
     req.session.user = {
       id: user.id,
       email: user.email,
+      role: user.role,
+      sessionId: session.sessionId,
       ip: ip
     };
 
@@ -324,7 +353,8 @@ export const login = async (req, res) => {
         id: user.id,
         email: user.email,
         fullname: user.fullname,
-        role: user.role
+        role: user.role,
+        sessionId: session.sessionId
       },
     }))
 
@@ -361,15 +391,13 @@ export const googleLogin = async (req, res) => {
       });
     }
 
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role
-      },
-      process.env.JWT_SECRET || process.env.AUTH_SECRET || "defaultsecret",
-      { expiresIn: "1d" }
-    );
+    const session = await createAuthenticatedSession(req, user);
+
+    if (!session?.sessionId) {
+      return res.status(500).json({ message: "Unable to create login session" });
+    }
+
+    const token = signAuthToken(user, session);
 
     const ip = getIP(req);
 
@@ -377,6 +405,7 @@ export const googleLogin = async (req, res) => {
       id: user.id,
       email: user.email,
       role: user.role,
+      sessionId: session.sessionId,
       ip: ip
     };
 
@@ -392,7 +421,8 @@ export const googleLogin = async (req, res) => {
         id: user.id,
         email: user.email,
         fullname: user.fullname,
-        role: user.role
+        role: user.role,
+        sessionId: session.sessionId
       },
     }));
   } catch (error) {
@@ -401,7 +431,23 @@ export const googleLogin = async (req, res) => {
   }
 };
 
-export const logout = (req, res) => {
+export const logout = async (req, res) => {
+  const sessionId = req.user?.sessionId || req.user?.sid || req.session?.user?.sessionId;
+
+  if (sessionId) {
+    await prisma.loginSessionLog.updateMany({
+      where: {
+        sessionId,
+        type: "session_start",
+        status: "active",
+      },
+      data: {
+        status: "revoked",
+        revokedAt: new Date(),
+      },
+    });
+  }
+
   // Clear session
   req.session.destroy((err) => {
     if (err) {
@@ -457,15 +503,13 @@ export const adminLogin = async (req, res) => {
       return res.status(401).json({ message: "Wrong password" });
     }
 
-    const token = jwt.sign(
-      {
-        id: admin.id,
-        email: admin.email,
-        role: admin.role
-      },
-      process.env.JWT_SECRET || process.env.AUTH_SECRET || "defaultsecret",
-      { expiresIn: "1d" }
-    );
+    const session = await createAuthenticatedSession(req, admin);
+
+    if (!session?.sessionId) {
+      return res.status(500).json({ message: "Unable to create login session" });
+    }
+
+    const token = signAuthToken(admin, session);
 
     const ip = getIP(req);
 
@@ -473,6 +517,7 @@ export const adminLogin = async (req, res) => {
       id: admin.id,
       email: admin.email,
       role: admin.role,
+      sessionId: session.sessionId,
       ip: ip
     };
 
@@ -488,7 +533,8 @@ export const adminLogin = async (req, res) => {
         id: admin.id,
         email: admin.email,
         fullname: admin.fullname,
-        role: admin.role
+        role: admin.role,
+        sessionId: session.sessionId
       },
     }));
 

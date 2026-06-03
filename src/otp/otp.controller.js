@@ -52,6 +52,13 @@ const formatSmsPhone = (normalizedPhone) => {
     return digits;
 };
 
+const buildOtpDeliveryResponse = ({ message, smsSent, warning }) => ({
+    message,
+    smsSent,
+    ...(warning ? { warning } : {}),
+    expiresIn: "2 minutes",
+});
+
 const ensureUserForPhone = async(phone) => {
     let user = await prisma.user.findUnique({ where: { mobile: phone } });
 
@@ -84,10 +91,6 @@ const issueAuthenticatedLogin = async({ req, res, phone, user, message, vipLogin
     const deviceIdentity = getRequestDeviceIdentity(req);
     const userAgent = req.get("user-agent");
 
-    const token = jwt.sign({ id: user.id, mobile: user.mobile },
-        process.env.JWT_SECRET, { expiresIn: "1d" }
-    );
-
     await recordLoginAttempt(phone, true, req.clientIp, req.geoLocation, userAgent, deviceIdentity);
 
     const session = await createLoginSession(
@@ -97,6 +100,21 @@ const issueAuthenticatedLogin = async({ req, res, phone, user, message, vipLogin
         userAgent,
         deviceIdentity,
         phone,
+    );
+
+    if (!session?.sessionId) {
+        return res.status(500).json({ message: "Unable to create login session" });
+    }
+
+    const token = jwt.sign({
+            id: user.id,
+            email: user.email,
+            mobile: user.mobile,
+            role: user.role,
+            sessionId: session.sessionId,
+            sid: session.sessionId,
+        },
+        process.env.JWT_SECRET, { expiresIn: "1d" }
     );
 
     analyticsService.trackAuthEvent(vipLogin ? "vip_login_success" : "login_success", user.id, null, {});
@@ -206,19 +224,19 @@ export const sendOtp = async(req, res) => {
             });
 
             res.json({
-                message: "OTP sent successfully",
-                phone,
-                smsSent: true,
-                expiresIn: "2 minutes",
+                ...buildOtpDeliveryResponse({
+                    message: "OTP sent successfully",
+                    smsSent: true,
+                }),
             });
         } catch (smsError) {
             console.error("SMS API Error:", smsError.message);
             res.status(502).json({
-                message: "OTP created but SMS delivery failed",
-                phone,
-                smsSent: false,
-                warning: "OTP saved but SMS delivery failed. Contact support.",
-                expiresIn: "2 minutes",
+                ...buildOtpDeliveryResponse({
+                    message: "OTP created but SMS delivery failed",
+                    smsSent: false,
+                    warning: "OTP saved but SMS delivery failed. Contact support.",
+                }),
             });
         }
     } catch (error) {
@@ -287,19 +305,19 @@ export const resendOtp = async(req, res) => {
             });
 
             res.json({
-                message: "OTP resent successfully",
-                phone,
-                smsSent: true,
-                expiresIn: "2 minutes",
+                ...buildOtpDeliveryResponse({
+                    message: "OTP resent successfully",
+                    smsSent: true,
+                }),
             });
         } catch (smsError) {
             console.error("SMS API Error:", smsError.message);
             res.status(502).json({
-                message: "OTP resent but SMS delivery failed",
-                phone,
-                smsSent: false,
-                warning: "OTP saved but SMS delivery failed. Contact support.",
-                expiresIn: "2 minutes",
+                ...buildOtpDeliveryResponse({
+                    message: "OTP resent but SMS delivery failed",
+                    smsSent: false,
+                    warning: "OTP saved but SMS delivery failed. Contact support.",
+                }),
             });
         }
     } catch (error) {
