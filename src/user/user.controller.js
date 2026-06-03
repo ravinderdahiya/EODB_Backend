@@ -69,6 +69,20 @@ const shouldExposeAuthTokenBody = () => (
   String(process.env.EXPOSE_AUTH_TOKEN_BODY || "").toLowerCase() === "true"
 );
 
+const LOGIN_SUCCESS_EVENT_TYPES = [
+  "login_success",
+  "google_login_success",
+  "admin_login_success",
+];
+
+const SESSION_EVENT_TYPES = [
+  "session_start",
+  ...LOGIN_SUCCESS_EVENT_TYPES,
+];
+
+const INDIA_TIMEZONE_OFFSET_MINUTES = 330;
+const ACTIVE_SESSION_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 const useSecureCookies = () => (
   String(process.env.ALLOW_INSECURE_COOKIES || "").toLowerCase() !== "true"
 );
@@ -114,15 +128,47 @@ const buildAuthSuccessPayload = ({ message, token, user }) => ({
   user,
 });
 
-const startOfToday = () => {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+const startOfDayForOffset = (date, offsetMinutes) => {
+  const shifted = new Date(date.getTime() + offsetMinutes * 60 * 1000);
+  return new Date(Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate(),
+  ) - offsetMinutes * 60 * 1000);
 };
 
-const startOfDaysAgo = (days) => {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+const startOfToday = () => startOfDayForOffset(new Date(), INDIA_TIMEZONE_OFFSET_MINUTES);
+
+const startOfDaysAgo = (days) => (
+  new Date(startOfToday().getTime() - days * 24 * 60 * 60 * 1000)
+);
+
+const buildActiveSessionWhere = (now) => {
+  const fallbackWindowStart = new Date(now.getTime() - ACTIVE_SESSION_WINDOW_MS);
+
+  return {
+    type: "session_start",
+    status: "active",
+    userId: { not: null },
+    OR: [
+      { expiresAt: { gt: now } },
+      {
+        AND: [
+          { expiresAt: null },
+          { loginAt: { gte: fallbackWindowStart } },
+        ],
+      },
+      {
+        AND: [
+          { expiresAt: null },
+          { loginAt: null },
+          { createdAt: { gte: fallbackWindowStart } },
+        ],
+      },
+    ],
+  };
 };
+
 
 const buildPublicAnnouncements = ({
   registeredLast7Days,
@@ -177,8 +223,7 @@ const buildPublicAnnouncements = ({
 
 const recordAuthSuccessLog = async (req, user, type = "login_success") => {
   try {
-    // Fire-and-forget to avoid delaying response; log failures to server logs.
-    prisma.loginSessionLog.create({
+    await prisma.loginSessionLog.create({
       data: {
         userId: user?.id || null,
         ipAddress: req.clientIp || getIP(req) || "unknown",
@@ -193,10 +238,6 @@ const recordAuthSuccessLog = async (req, user, type = "login_success") => {
         status: "success",
         loginAt: new Date(),
       },
-    }).then(() => {
-      // intentionally empty on success
-    }).catch((error) => {
-      console.error("Auth success log insert failed (async):", error.message);
     });
   } catch (error) {
     console.error("Auth success log insert failed:", error.message);
@@ -574,11 +615,8 @@ export const getLoginLogs = async (req, res) => {
     const skip = (page - 1) * pageSize;
 
     const loginEventTypes = [
-      "login_success",
+      ...SESSION_EVENT_TYPES,
       "login_failed",
-      "session_start",
-      "google_login_success",
-      "admin_login_success",
     ];
 
     const totalCount = await prisma.loginSessionLog.count({
@@ -687,6 +725,7 @@ export const getPublicLoginInsights = async (req, res) => {
     const now = new Date();
     const todayStart = startOfToday();
     const sevenDaysAgo = startOfDaysAgo(7);
+    const activeSessionWhere = buildActiveSessionWhere(now);
 
     const [
       totalRegisteredUsers,
@@ -704,30 +743,21 @@ export const getPublicLoginInsights = async (req, res) => {
       }),
       prisma.loginSessionLog.count({
         where: {
-          type: "login_success",
+          type: { in: LOGIN_SUCCESS_EVENT_TYPES },
           createdAt: { gte: todayStart },
         },
       }),
       prisma.loginSessionLog.count({
-        where: {
-          type: "session_start",
-          status: "active",
-          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-        },
+        where: activeSessionWhere,
       }),
       prisma.loginSessionLog.findMany({
-        where: {
-          type: "session_start",
-          status: "active",
-          userId: { not: null },
-          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-        },
+        where: activeSessionWhere,
         select: { userId: true },
         distinct: ["userId"],
       }),
       prisma.loginSessionLog.findFirst({
         where: {
-          type: { in: ["session_start", "login_success"] },
+          type: { in: SESSION_EVENT_TYPES },
         },
         orderBy: { createdAt: "desc" },
         select: {
