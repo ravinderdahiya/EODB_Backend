@@ -52,6 +52,13 @@ const formatSmsPhone = (normalizedPhone) => {
     return digits;
 };
 
+const buildOtpDeliveryResponse = ({ message, smsSent, warning }) => ({
+    message,
+    smsSent,
+    ...(warning ? { warning } : {}),
+    expiresIn: "2 minutes",
+});
+
 const ensureUserForPhone = async(phone) => {
     let user = await prisma.user.findUnique({ where: { mobile: phone } });
 
@@ -217,19 +224,19 @@ export const sendOtp = async(req, res) => {
             });
 
             res.json({
-                message: "OTP sent successfully",
-                phone,
-                smsSent: true,
-                expiresIn: "2 minutes",
+                ...buildOtpDeliveryResponse({
+                    message: "OTP sent successfully",
+                    smsSent: true,
+                }),
             });
         } catch (smsError) {
             console.error("SMS API Error:", smsError.message);
             res.status(502).json({
-                message: "OTP created but SMS delivery failed",
-                phone,
-                smsSent: false,
-                warning: "OTP saved but SMS delivery failed. Contact support.",
-                expiresIn: "2 minutes",
+                ...buildOtpDeliveryResponse({
+                    message: "OTP created but SMS delivery failed",
+                    smsSent: false,
+                    warning: "OTP saved but SMS delivery failed. Contact support.",
+                }),
             });
         }
     } catch (error) {
@@ -298,19 +305,19 @@ export const resendOtp = async(req, res) => {
             });
 
             res.json({
-                message: "OTP resent successfully",
-                phone,
-                smsSent: true,
-                expiresIn: "2 minutes",
+                ...buildOtpDeliveryResponse({
+                    message: "OTP resent successfully",
+                    smsSent: true,
+                }),
             });
         } catch (smsError) {
             console.error("SMS API Error:", smsError.message);
             res.status(502).json({
-                message: "OTP resent but SMS delivery failed",
-                phone,
-                smsSent: false,
-                warning: "OTP saved but SMS delivery failed. Contact support.",
-                expiresIn: "2 minutes",
+                ...buildOtpDeliveryResponse({
+                    message: "OTP resent but SMS delivery failed",
+                    smsSent: false,
+                    warning: "OTP saved but SMS delivery failed. Contact support.",
+                }),
             });
         }
     } catch (error) {
