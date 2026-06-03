@@ -70,6 +70,19 @@ export const loginLimiter = rateLimit({
   },
 });
 
+// CAPTCHA issue limiter - 30 challenges per 5 minutes per IP
+// Generous enough for legitimate refreshes/retries, but blocks token farming.
+export const captchaLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 30,
+  message: "Too many captcha requests, please try again later",
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    return ipKeyGenerator(req);
+  },
+});
+
 // OTP send limiter - 3 sends per 5 minutes per IP+phone
 export const otpLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,

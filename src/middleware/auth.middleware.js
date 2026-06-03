@@ -13,6 +13,7 @@ const PUBLIC_ROUTE_RULES = [
   { method: "POST", path: "/user/admin-login" },
   { method: "POST", path: "/user/google-login" },
   { method: "GET", path: "/user/public-login-insights" },
+  { method: "GET", path: "/captcha/new" },
   { method: "POST", path: "/otp/send-otp" },
   { method: "POST", path: "/otp/resend-otp" },
   { method: "POST", path: "/otp/verify-otp" },

@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 
 import userRoutes from "./user/user.routes.js";
 import otpRoutes from "./otp/otp.routes.js";
+import captchaRoutes from "./captcha/captcha.routes.js";
 import apiUrlRoutes from "./api-url/api-url.routes.js";
 import mapserverRoutes from "./mapserver/mapserver.routes.js";
 import analyticsRoutes from "./analytics/analytics.routes.js";
@@ -200,6 +201,7 @@ const mountApiRoute = (path, router) => {
 
 mountApiRoute("/user", userRoutes);
 mountApiRoute("/otp", otpRoutes);
+mountApiRoute("/captcha", captchaRoutes);
 mountApiRoute("/api-url", apiUrlRoutes);
 mountApiRoute("/mapserver", mapserverRoutes);
 mountApiRoute("/analytics", analyticsRoutes);
