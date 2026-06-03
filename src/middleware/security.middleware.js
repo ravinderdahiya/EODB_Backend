@@ -392,8 +392,24 @@ export const createLoginSession = async (
     const normalizedDeviceIdentity = normalizeDeviceIdentity(deviceIdentity);
     const normalizedMobile = mobile ? String(mobile).replace(/\D/g, "").slice(-10) : null;
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const loginAt = new Date();
+    const expiresAt = new Date(loginAt.getTime() + 24 * 60 * 60 * 1000);
+
+    await prisma.loginSessionLog.updateMany({
+      where: {
+        userId,
+        type: "session_start",
+        status: "active",
+        OR: [{ expiresAt: null }, { expiresAt: { gt: loginAt } }],
+      },
+      data: {
+        status: "revoked",
+        revokedAt: loginAt,
+      },
+    });
+
     // Create DB record asynchronously so API response is not blocked by disk/DB latency.
-    prisma.loginSessionLog.create({
+    await prisma.loginSessionLog.create({
       data: {
         userId,
         sessionId,
@@ -410,8 +426,8 @@ export const createLoginSession = async (
         mobile: normalizedMobile,
         type: "session_start",
         status: "active",
-        loginAt: new Date(),
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+        loginAt,
+        expiresAt,
       },
     }).then((created) => {
       console.log("✅ Login Session Created (async):", created.id);

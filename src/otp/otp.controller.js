@@ -84,10 +84,6 @@ const issueAuthenticatedLogin = async({ req, res, phone, user, message, vipLogin
     const deviceIdentity = getRequestDeviceIdentity(req);
     const userAgent = req.get("user-agent");
 
-    const token = jwt.sign({ id: user.id, mobile: user.mobile },
-        process.env.JWT_SECRET, { expiresIn: "1d" }
-    );
-
     await recordLoginAttempt(phone, true, req.clientIp, req.geoLocation, userAgent, deviceIdentity);
 
     const session = await createLoginSession(
@@ -97,6 +93,21 @@ const issueAuthenticatedLogin = async({ req, res, phone, user, message, vipLogin
         userAgent,
         deviceIdentity,
         phone,
+    );
+
+    if (!session?.sessionId) {
+        return res.status(500).json({ message: "Unable to create login session" });
+    }
+
+    const token = jwt.sign({
+            id: user.id,
+            email: user.email,
+            mobile: user.mobile,
+            role: user.role,
+            sessionId: session.sessionId,
+            sid: session.sessionId,
+        },
+        process.env.JWT_SECRET, { expiresIn: "1d" }
     );
 
     analyticsService.trackAuthEvent(vipLogin ? "vip_login_success" : "login_success", user.id, null, {});
