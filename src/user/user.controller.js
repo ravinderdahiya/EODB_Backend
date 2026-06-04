@@ -613,22 +613,56 @@ export const getLoginLogs = async (req, res) => {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 5), 50);
     const skip = (page - 1) * pageSize;
+    const search = safeString(req.query.search, 120);
+    const isSmeQuery = safeString(req.query.issme ?? req.query.isSme, 10);
+    const issme = isSmeQuery
+      ? ["true", "1", "yes", "y"].includes(isSmeQuery.toLowerCase())
+      : false;
 
     const loginEventTypes = [
       ...SESSION_EVENT_TYPES,
       "login_failed",
     ];
+    const where = {
+      type: { in: loginEventTypes },
+      ...(issme
+        ? {
+            user: {
+              is: { role: "sme" },
+            },
+          }
+        : {}),
+      ...(search
+        ? {
+            OR: [
+              { ipAddress: { contains: search, mode: "insensitive" } },
+              { city: { contains: search, mode: "insensitive" } },
+              { country: { contains: search, mode: "insensitive" } },
+              { mobile: { contains: search, mode: "insensitive" } },
+              { userAgent: { contains: search, mode: "insensitive" } },
+              {
+                user: {
+                  is: {
+                    OR: [
+                      { fullname: { contains: search, mode: "insensitive" } },
+                      { email: { contains: search, mode: "insensitive" } },
+                      { mobile: { contains: search, mode: "insensitive" } },
+                      { role: { contains: search, mode: "insensitive" } },
+                    ],
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
 
     const totalCount = await prisma.loginSessionLog.count({
-      where: {
-        type: { in: loginEventTypes },
-      },
+      where,
     });
 
     const logs = await prisma.loginSessionLog.findMany({
-      where: {
-        type: { in: loginEventTypes },
-      },
+      where,
       orderBy: { createdAt: "desc" },
       skip,
       take: pageSize,
