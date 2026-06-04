@@ -1,6 +1,6 @@
 import express from "express";
 import session from "express-session";
-import connectRedis from "connect-redis";
+import RedisStore from "connect-redis";
 import { createClient } from "redis";
 import compression from "compression";
 import cors from "cors";
@@ -52,7 +52,6 @@ const useSecureCookies = () => (
 const createRedisSessionStore = () => {
   if (!process.env.REDIS_URL) return null;
 
-  const RedisStore = connectRedis(session);
   redisSessionClient = createClient({
     url: process.env.REDIS_URL,
     socket: {
