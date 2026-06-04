@@ -169,6 +169,11 @@ const buildActiveSessionWhere = (now) => {
   };
 };
 
+const buildDistinctSessionWhere = (now) => ({
+  ...buildActiveSessionWhere(now),
+  sessionId: { not: null },
+});
+
 
 const buildPublicAnnouncements = ({
   registeredLast7Days,
@@ -189,7 +194,7 @@ const buildPublicAnnouncements = ({
     {
       id: "ann-login-today",
       title: "Today's Login Activity",
-      description: `${loggedInToday} successful logins recorded today.`,
+      description: `${loggedInToday} unique users logged in today.`,
       createdAt: nowIso,
       category: "activity",
     },
@@ -760,12 +765,13 @@ export const getPublicLoginInsights = async (req, res) => {
     const todayStart = startOfToday();
     const sevenDaysAgo = startOfDaysAgo(7);
     const activeSessionWhere = buildActiveSessionWhere(now);
+    const distinctSessionWhere = buildDistinctSessionWhere(now);
 
     const [
       totalRegisteredUsers,
       registeredLast7Days,
-      loggedInToday,
-      activeSessions,
+      loggedInTodayUsersRaw,
+      activeSessionsRaw,
       activeUsersRaw,
       latestSessionLog,
     ] = await Promise.all([
@@ -775,14 +781,19 @@ export const getPublicLoginInsights = async (req, res) => {
           createdAt: { gte: sevenDaysAgo },
         },
       }),
-      prisma.loginSessionLog.count({
+      prisma.loginSessionLog.findMany({
         where: {
           type: { in: LOGIN_SUCCESS_EVENT_TYPES },
           createdAt: { gte: todayStart },
+          userId: { not: null },
         },
+        select: { userId: true },
+        distinct: ["userId"],
       }),
-      prisma.loginSessionLog.count({
-        where: activeSessionWhere,
+      prisma.loginSessionLog.findMany({
+        where: distinctSessionWhere,
+        select: { sessionId: true },
+        distinct: ["sessionId"],
       }),
       prisma.loginSessionLog.findMany({
         where: activeSessionWhere,
@@ -802,6 +813,9 @@ export const getPublicLoginInsights = async (req, res) => {
         },
       }),
     ]);
+
+    const loggedInToday = loggedInTodayUsersRaw.length;
+    const activeSessions = activeSessionsRaw.length;
 
     const announcements = buildPublicAnnouncements({
       registeredLast7Days,
