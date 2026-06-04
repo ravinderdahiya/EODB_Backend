@@ -860,9 +860,15 @@ export const getUsersList = async (req, res) => {
     const skip = (page - 1) * pageSize;
     const search = safeString(req.query.search, 120);
     const role = safeString(req.query.role, 40);
+    const isSmeQuery = safeString(req.query.issme ?? req.query.isSme, 10);
+    const issme = isSmeQuery
+      ? ["true", "1", "yes", "y"].includes(isSmeQuery.toLowerCase())
+      : false;
+
+    const effectiveRoleFilter = role || (issme ? "sme" : null);
 
     const where = {
-      ...(role ? { role } : {}),
+      ...(effectiveRoleFilter ? { role: effectiveRoleFilter } : {}),
       ...(search
         ? {
             OR: [
