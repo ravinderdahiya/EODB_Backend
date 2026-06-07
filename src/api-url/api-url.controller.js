@@ -435,6 +435,7 @@ export const getFrontendRuntimeConfig = async (req, res) => {
   const config = {
     // Frontend now consumes backend-only proxy URLs.
     VITE_HSAC_MAIN_URL: withBasePath(backendBasePath, "/mapserver/service/hsacMain"),
+    VITE_KANAL_MARLA_URL: withBasePath(backendBasePath, "/mapserver/service/kanalMarla"),
     VITE_HSACGGM_ASSETS_URL: withBasePath(backendBasePath, "/mapserver/service/governmentAssets"),
     VITE_NHAI_ROADS_URL: withBasePath(backendBasePath, "/mapserver/service/nhaiRoads"),
     VITE_HARYANA_ROADS_URL: withBasePath(backendBasePath, "/mapserver/service/haryanaRoads"),

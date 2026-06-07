@@ -102,6 +102,8 @@ function resolveServiceBaseUrl(serviceKey, config) {
   switch (`${serviceKey || ''}`.trim()) {
     case 'hsacMain':
       return joinOriginAndPath(config.VITE_HSAC_ORIGIN, config.VITE_HSAC_MAP_SERVICE_PATH);
+    case 'kanalMarla':
+      return joinOriginAndPath(config.VITE_HSAC_ORIGIN, config.VITE_KANAL_MARLA_PATH);
     case 'governmentAssets':
       return config.VITE_HSACGGM_ASSETS_URL;
     case 'nhaiRoads':
