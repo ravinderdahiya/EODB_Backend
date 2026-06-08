@@ -192,8 +192,17 @@ async function forwardRequest(
     res.setHeader('cache-control', cacheControl);
   }
 
-  const payload = Buffer.from(await response.arrayBuffer());
-  res.status(response.status).send(payload);
+  res.status(response.status);
+  if (!response.body) {
+    return res.end();
+  }
+
+  await new Promise((resolve, reject) => {
+    response.body.on('error', reject);
+    res.on('error', reject);
+    res.on('finish', resolve);
+    response.body.pipe(res);
+  });
 }
 
 /**

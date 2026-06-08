@@ -60,11 +60,27 @@ process.on("uncaughtException", (error) => {
   shutdown("uncaughtException");
 });
 
+async function cleanupOldLoginLogs() {
+  try {
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const deleted = await prisma.loginSessionLog.deleteMany({
+      where: {
+        createdAt: { lt: twoDaysAgo },
+      },
+    });
+    console.log(`Login log cleanup removed ${deleted.count} entries older than 2 days.`);
+  } catch (error) {
+    console.error("Login log cleanup failed:", error);
+  }
+}
+
 async function startServer() {
   try {
     await prisma.$connect();
     const seeded = await ensureRuntimeConfigEntries(prisma);
     console.log(`Runtime config seed check complete (created: ${seeded.created}/${seeded.total})`);
+    await cleanupOldLoginLogs();
+    setInterval(cleanupOldLoginLogs, 24 * 60 * 60 * 1000);
   } catch (error) {
     console.error("FATAL: could not ensure runtime config entries in api_urls:", error.message);
     process.exit(1);

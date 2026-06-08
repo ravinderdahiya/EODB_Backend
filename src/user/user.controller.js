@@ -623,12 +623,14 @@ export const getLoginLogs = async (req, res) => {
     const issme = isSmeQuery
       ? ["true", "1", "yes", "y"].includes(isSmeQuery.toLowerCase())
       : false;
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
 
     const loginEventTypes = [
       ...SESSION_EVENT_TYPES,
       "login_failed",
     ];
     const where = {
+      createdAt: { gte: twoDaysAgo },
       type: { in: loginEventTypes },
       ...(issme
         ? {
