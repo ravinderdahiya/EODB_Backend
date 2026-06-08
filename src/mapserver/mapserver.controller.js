@@ -1,3 +1,5 @@
+import http from 'node:http';
+import https from 'node:https';
 import fetch from 'node-fetch';
 import prisma from '../config/db.js';
 import { getCache, setCache } from '../utils/cache.js';
@@ -6,6 +8,16 @@ import {
   UPSTREAM_CONFIG_KEYS,
   ensureRuntimeConfigEntries,
 } from '../api-url/runtime-config.service.js';
+
+// Reuse TCP/TLS connections to upstream map servers. Without keep-alive, every tile /
+// export / query / identify request opens a brand-new TCP + TLS handshake to the
+// upstream (hsac.org.in etc.), which is the single biggest latency source when the
+// map fires many requests. These pooled agents eliminate that per-request handshake.
+const keepAliveHttpAgent = new http.Agent({ keepAlive: true, maxSockets: 64 });
+const keepAliveHttpsAgent = new https.Agent({ keepAlive: true, maxSockets: 64 });
+
+const selectKeepAliveAgent = (targetUrl) =>
+  (/^https:/i.test(`${targetUrl || ''}`) ? keepAliveHttpsAgent : keepAliveHttpAgent);
 
 function normalizeOrigin(origin) {
   return `${origin || ''}`.trim().replace(/\/+$/, '');
@@ -180,6 +192,7 @@ async function forwardRequest(
     method: effectiveMethod,
     headers,
     body: requestBody,
+    agent: selectKeepAliveAgent(targetUrl),
   });
 
   const responseContentType = response.headers.get('content-type');
@@ -192,8 +205,30 @@ async function forwardRequest(
     res.setHeader('cache-control', cacheControl);
   }
 
+  res.status(response.status);
+
+  // Stream the upstream response straight to the client instead of buffering the whole
+  // body first. This improves time-to-first-byte for large tile/image responses.
+  if (response.body && typeof response.body.pipe === 'function') {
+    await new Promise((resolve, reject) => {
+      response.body.on('error', reject);
+      res.on('error', reject);
+      res.on('finish', resolve);
+      response.body.pipe(res);
+    }).catch((streamError) => {
+      if (!res.headersSent) {
+        res.status(502);
+      }
+      if (!res.writableEnded) {
+        res.end();
+      }
+      throw streamError;
+    });
+    return;
+  }
+
   const payload = Buffer.from(await response.arrayBuffer());
-  res.status(response.status).send(payload);
+  res.send(payload);
 }
 
 /**
@@ -402,6 +437,7 @@ export const getMapServerMetadata = async (req, res) => {
       headers: {
         'User-Agent': 'EODB-Backend-Proxy/1.0',
       },
+      agent: selectKeepAliveAgent(targetUrl),
     });
 
     if (!response.ok) {

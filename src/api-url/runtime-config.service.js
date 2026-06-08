@@ -23,7 +23,7 @@ function getUpstreamConfigDefaults() {
   return {
     VITE_HSAC_ORIGIN: process.env.HSAC_ORIGIN || "https://hsac.org.in",
     VITE_HSAC_MAP_SERVICE_PATH:
-      process.env.HSAC_MAP_SERVICE_PATH || "/server/rest/services/EODB/EODB_HR23/MapServer",
+      process.env.HSAC_MAP_SERVICE_PATH || "/server/rest/services/EODB/EODB_HR24/MapServer",
     VITE_KANAL_MARLA_PATH:
       process.env.HSAC_KANAL_MARLA_PATH || "/server/rest/services/EODB/Kanal_Marla/MapServer",
     VITE_HSAC_DOTNET_PROXY_URL:
