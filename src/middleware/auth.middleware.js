@@ -9,6 +9,7 @@ const getCookieToken = (req) => {
 };
 
 const PUBLIC_ROUTE_RULES = [
+  { method: "GET", path: "/" },
   { method: "POST", path: "/user/signup" },
   { method: "POST", path: "/user/login" },
   { method: "POST", path: "/user/admin-login" },
