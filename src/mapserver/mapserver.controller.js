@@ -16,6 +16,14 @@ import {
 const keepAliveHttpAgent = new http.Agent({ keepAlive: true, maxSockets: 64 });
 const keepAliveHttpsAgent = new https.Agent({ keepAlive: true, maxSockets: 64 });
 
+// Map tiles/exports/legends for a given bbox+size are deterministic and rarely change,
+// so let the browser cache them. This stops identical tiles from re-hitting the upstream
+// GIS server on every pan/zoom and on each fresh login. Kept `private` (per-browser only,
+// never a shared/CDN cache) because these responses ride on the authenticated proxy.
+// Override via env if boundary/cadastral data is updated more frequently.
+const MAP_TILE_CACHE_CONTROL =
+  process.env.MAP_TILE_CACHE_CONTROL || 'private, max-age=3600';
+
 const selectKeepAliveAgent = (targetUrl) =>
   (/^https:/i.test(`${targetUrl || ''}`) ? keepAliveHttpsAgent : keepAliveHttpAgent);
 
@@ -163,7 +171,7 @@ async function forwardRequest(
   req,
   res,
   targetUrl,
-  { action, resource, method, body, contentType },
+  { action, resource, method, body, contentType, cacheControlOverride },
 ) {
   const userId = req.user?.sub || req.user?.id || 'unknown';
 
@@ -200,8 +208,13 @@ async function forwardRequest(
     res.setHeader('content-type', responseContentType);
   }
 
+  const effectiveMethod2 = `${effectiveMethod || ''}`.toUpperCase();
   const cacheControl = response.headers.get('cache-control');
-  if (cacheControl) {
+  if (cacheControlOverride && response.ok && (effectiveMethod2 === 'GET' || effectiveMethod2 === 'HEAD')) {
+    // Cacheable map tile/service response: prefer our deterministic policy over the
+    // upstream's (ArcGIS often returns no-cache/private which defeats browser caching).
+    res.setHeader('cache-control', cacheControlOverride);
+  } else if (cacheControl) {
     res.setHeader('cache-control', cacheControl);
   }
 
@@ -257,6 +270,7 @@ export const proxyArcgisService = async (req, res) => {
     return await forwardRequest(req, res, targetUrl, {
       action: 'MAPSERVER_SERVICE_PROXY',
       resource: `${serviceKey}${pathSuffix || '/'}`,
+      cacheControlOverride: MAP_TILE_CACHE_CONTROL,
     });
   } catch (error) {
     console.error('Map service proxy error:', error);
