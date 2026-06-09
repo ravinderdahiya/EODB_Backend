@@ -7,6 +7,7 @@ import { logSecurityEvent } from '../services/auditLogService.js';
 import {
   UPSTREAM_CONFIG_KEYS,
   ensureRuntimeConfigEntries,
+  getUpstreamConfigDefaults,
 } from '../api-url/runtime-config.service.js';
 
 // Reuse TCP/TLS connections to upstream map servers. Without keep-alive, every tile /
@@ -76,8 +77,11 @@ function wrapWithDotNetProxyIfNeeded(targetUrl, config, { serviceKey } = {}) {
     return targetUrl;
   }
 
-  const shouldProxy =
-    serviceKey === 'hsacMain' || `${targetUrl || ''}`.startsWith(`${hsacOrigin}/`);
+  // Only the secured main EODB MapServer needs the ASP.NET token-injecting proxy
+  // (proxy.ashx). Other hsac.org.in services (e.g. Kanal_Marla) are public and resolve
+  // directly with HTTP 200 — routing them through proxy.ashx hit its service whitelist
+  // and returned 404. Restrict the wrap to hsacMain so those layers load directly.
+  const shouldProxy = serviceKey === 'hsacMain';
 
   if (!shouldProxy) {
     return targetUrl;
@@ -107,7 +111,10 @@ async function getUpstreamRuntimeConfig() {
     },
   });
 
-  const config = {};
+  // Seed defaults form the base so a missing/inactive DB row never leaves a service
+  // key unresolved (which surfaced as 404s for kanalMarla / governmentAssets). Active
+  // DB values still win — admins can override any upstream URL from the apiUrl table.
+  const config = { ...getUpstreamConfigDefaults() };
   for (const item of entries) {
     if (typeof item.url === 'string' && item.url.trim()) {
       config[item.name] = item.url.trim();

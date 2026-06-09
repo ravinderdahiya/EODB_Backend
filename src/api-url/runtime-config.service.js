@@ -19,7 +19,7 @@ export const FRONTEND_LITERAL_KEYS = [
 
 let ensurePromise = null;
 
-function getUpstreamConfigDefaults() {
+export function getUpstreamConfigDefaults() {
   return {
     VITE_HSAC_ORIGIN: process.env.HSAC_ORIGIN || "https://hsac.org.in",
     VITE_HSAC_MAP_SERVICE_PATH:
