@@ -3,6 +3,7 @@ import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import fetch from "node-fetch"
 import { createLoginSession } from "../middleware/security.middleware.js"
+import { invalidateSessionCache } from "../middleware/auth.middleware.js"
 import { getRequestDeviceIdentity } from "../utils/device-identity.utils.js"
 
 const ADMIN_ROLES = new Set(["admin", "superadmin"]);
@@ -492,6 +493,9 @@ export const logout = async (req, res) => {
         revokedAt: new Date(),
       },
     });
+
+    // Drop the cached auth validation so the revoked session stops passing auth at once.
+    await invalidateSessionCache(sessionId);
   }
 
   // Clear session
