@@ -72,6 +72,8 @@ model LoginSessionLog {
   @@index([ipAddress])
   @@index([createdAt])
   @@index([type])
+  // Composite index matching the per-request session-validation query in auth.middleware.
+  @@index([sessionId, status, type])
   @@map("login_session_logs")
 }
 

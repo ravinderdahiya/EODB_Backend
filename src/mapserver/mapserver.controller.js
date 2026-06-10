@@ -25,6 +25,11 @@ const keepAliveHttpsAgent = new https.Agent({ keepAlive: true, maxSockets: 64 })
 const MAP_TILE_CACHE_CONTROL =
   process.env.MAP_TILE_CACHE_CONTROL || 'private, max-age=3600';
 
+// Hard ceiling for any single upstream map/GIS request. Without this a slow or
+// unresponsive upstream (hsac.org.in, proxy.ashx, etc.) would keep the proxy request
+// open indefinitely and tie up a worker socket.
+const UPSTREAM_TIMEOUT_MS = Number(process.env.MAP_UPSTREAM_TIMEOUT_MS || 20000);
+
 const selectKeepAliveAgent = (targetUrl) =>
   (/^https:/i.test(`${targetUrl || ''}`) ? keepAliveHttpsAgent : keepAliveHttpAgent);
 
@@ -203,12 +208,30 @@ async function forwardRequest(
       contentType || req.get('content-type') || 'application/x-www-form-urlencoded';
   }
 
-  const response = await fetch(targetUrl, {
-    method: effectiveMethod,
-    headers,
-    body: requestBody,
-    agent: selectKeepAliveAgent(targetUrl),
-  });
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch(targetUrl, {
+      method: effectiveMethod,
+      headers,
+      body: requestBody,
+      agent: selectKeepAliveAgent(targetUrl),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    clearTimeout(timeoutHandle);
+    if (error?.name === 'AbortError') {
+      if (!res.headersSent) {
+        res.status(504).json({ error: 'Upstream map request timed out' });
+      }
+      return;
+    }
+    throw error;
+  }
+  // Connection + headers received; the stream itself is allowed to run to completion.
+  clearTimeout(timeoutHandle);
 
   const responseContentType = response.headers.get('content-type');
   if (responseContentType) {
@@ -453,13 +476,21 @@ export const getMapServerMetadata = async (req, res) => {
 
     const upstreamUrl = `${hsacMain.replace(/\/+$/, '')}?f=json`;
     const targetUrl = wrapWithDotNetProxyIfNeeded(upstreamUrl, config, { serviceKey: 'hsacMain' });
-    const response = await fetch(targetUrl, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'EODB-Backend-Proxy/1.0',
-      },
-      agent: selectKeepAliveAgent(targetUrl),
-    });
+    const metadataController = new AbortController();
+    const metadataTimeout = setTimeout(() => metadataController.abort(), UPSTREAM_TIMEOUT_MS);
+    let response;
+    try {
+      response = await fetch(targetUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'EODB-Backend-Proxy/1.0',
+        },
+        agent: selectKeepAliveAgent(targetUrl),
+        signal: metadataController.signal,
+      });
+    } finally {
+      clearTimeout(metadataTimeout);
+    }
 
     if (!response.ok) {
       throw new Error(`MapServer returned ${response.status}`);

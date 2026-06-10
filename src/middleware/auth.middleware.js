@@ -1,5 +1,24 @@
 import jwt from "jsonwebtoken";
 import prisma from "../config/db.js";
+import { getCache, setCache, delCache } from "../utils/cache.js";
+
+// Active sessions are validated against the DB on every authenticated request.
+// The map fires many requests per interaction, so we cache a successful validation
+// briefly (default 30s). This collapses dozens of identical DB lookups (including
+// the double check from the global guard + per-router guard) into one.
+const SESSION_CACHE_TTL_SECONDS = Number(process.env.SESSION_CACHE_TTL_SECONDS || 30);
+const sessionCacheKey = (sessionId) => `authSession:${sessionId}`;
+
+// Invalidate the cached session immediately (used on logout) so a revoked session
+// cannot keep passing auth for the remainder of the cache window.
+export const invalidateSessionCache = async (sessionId) => {
+  if (!sessionId) return;
+  try {
+    await delCache(sessionCacheKey(sessionId));
+  } catch {
+    // Cache invalidation is best-effort; DB revoke remains the source of truth.
+  }
+};
 
 // Read auth_token from httpOnly cookie (no cookie-parser dep needed)
 const getCookieToken = (req) => {
@@ -70,6 +89,14 @@ export const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ message: "Session expired. Please login again." });
     }
 
+    const cacheKey = sessionCacheKey(sessionId);
+    const cachedSession = await getCache(cacheKey);
+    if (cachedSession && cachedSession.userId === decoded.id) {
+      req.user = decoded;
+      req.authSession = cachedSession;
+      return next();
+    }
+
     const activeSession = await prisma.loginSessionLog.findFirst({
       where: {
         sessionId,
@@ -84,6 +111,14 @@ export const authMiddleware = async (req, res, next) => {
     if (!activeSession) {
       return res.status(401).json({ message: "Session expired. Please login again." });
     }
+
+    // Cache the validated session (include userId so a cached entry can never be
+    // reused for a different user) for a short window.
+    await setCache(
+      cacheKey,
+      { id: activeSession.id, sessionId: activeSession.sessionId, userId: decoded.id },
+      SESSION_CACHE_TTL_SECONDS,
+    );
 
     req.user = decoded;
     req.authSession = activeSession;
