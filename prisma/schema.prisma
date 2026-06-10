@@ -74,6 +74,9 @@ model LoginSessionLog {
   @@index([type])
   // Composite index matching the per-request session-validation query in auth.middleware.
   @@index([sessionId, status, type])
+  @@index([sessionId, userId, type, status])
+  @@index([type, createdAt])
+  @@index([type, status, createdAt])
   @@map("login_session_logs")
 }
 
