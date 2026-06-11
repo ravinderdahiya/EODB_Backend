@@ -131,6 +131,7 @@ const issueAuthenticatedLogin = async({ req, res, phone, user, message, vipLogin
             id: user.id,
             mobile: user.mobile,
             email: user.email,
+            role: user.role || "user",
         },
     });
 };

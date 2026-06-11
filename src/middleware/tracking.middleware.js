@@ -2,14 +2,15 @@ import geoip from "geoip-lite";
 import prisma from "../config/db.js";
 import analyticsService from "../services/analyticsService.js";
 import { getRequestDeviceIdentity } from "../utils/device-identity.utils.js";
-import { getIPLocation } from "../utils/ipLocation.js";
+import { getIPLocation, getCachedIPLocation } from "../utils/ipLocation.js";
 
 const shouldSkipPersistentTracking = (req) => {
   const path = String(req.path || req.originalUrl || "");
   if (!path) return false;
 
-  if (path.startsWith("/mapserver/service/")) return true;
-  if (path === "/mapserver/metadata") return true;
+  // Skip all high-frequency map proxy traffic (tiles, queries, identify, land-record).
+  // These fire dozens of times per map session and must not create a DB log row each.
+  if (path.includes("/mapserver/")) return true;
   return false;
 };
 
@@ -54,11 +55,18 @@ export const trackingMiddleware = async (req, res, next) => {
     let city = geo?.city || null;
 
     if ((!city || latitude == null || longitude == null) && ip !== "127.0.0.1") {
-      const fallback = await getIPLocation(ip);
-      latitude = latitude ?? fallback?.latitude ?? null;
-      longitude = longitude ?? fallback?.longitude ?? null;
-      country = country || fallback?.country || null;
-      city = city || fallback?.city || null;
+      // Never block the request on the external geolocation provider. Use a cached
+      // result if we already have one; otherwise warm the cache in the background so
+      // later requests from this IP get enriched without adding per-request latency.
+      const cachedFallback = getCachedIPLocation(ip);
+      if (cachedFallback) {
+        latitude = latitude ?? cachedFallback.latitude ?? null;
+        longitude = longitude ?? cachedFallback.longitude ?? null;
+        country = country || cachedFallback.country || null;
+        city = city || cachedFallback.city || null;
+      } else {
+        void getIPLocation(ip).catch(() => {});
+      }
     }
 
     req.clientIp = ip;

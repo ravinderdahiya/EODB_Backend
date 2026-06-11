@@ -1,5 +1,4 @@
 import express from 'express';
-import { authMiddleware } from '../middleware/auth.middleware.js';
 import {
   proxyMapServerQuery,
   proxyMapServerIdentify,
@@ -10,16 +9,14 @@ import {
 
 const router = express.Router();
 
-// Token-based guard for every mapserver endpoint.
-// In addition to JWT verification, ensure token payload carries a user identifier.
+// Global requireAuthUnlessPublic already validated the JWT/session. Only verify
+// that the decoded token carries a user id before proxying map requests.
 const mapserverAuthGuard = (req, res, next) => {
-  authMiddleware(req, res, () => {
-    const tokenUserId = req.user?.id ?? req.user?.sub;
-    if (!tokenUserId) {
-      return res.status(401).json({ message: 'Invalid token payload' });
-    }
-    return next();
-  });
+  const tokenUserId = req.user?.id ?? req.user?.sub;
+  if (!tokenUserId) {
+    return res.status(401).json({ message: 'Invalid token payload' });
+  }
+  return next();
 };
 
 router.use(mapserverAuthGuard);

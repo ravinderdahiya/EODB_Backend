@@ -47,12 +47,13 @@ export const generalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Skip root and high-frequency ArcGIS layer traffic that can exceed 100 requests quickly.
+  // All /mapserver/* routes are already JWT-protected, so the IP limiter (meant for
+  // login/abuse protection) must not throttle a normal heavy map session.
   skip: (req) =>
     req.path === "/" ||
     req.path === "/health" ||
     req.method === "OPTIONS" ||
-    req.path.startsWith("/mapserver/service/") ||
-    req.path === "/mapserver/metadata",
+    req.path.includes("/mapserver/"),
   keyGenerator: (req) => {
     // Use IP as key
     return ipKeyGenerator(req);

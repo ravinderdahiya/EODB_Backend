@@ -3,7 +3,9 @@ import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import fetch from "node-fetch"
 import { createLoginSession } from "../middleware/security.middleware.js"
+import { invalidateSessionCache } from "../middleware/auth.middleware.js"
 import { getRequestDeviceIdentity } from "../utils/device-identity.utils.js"
+import { getCache, setCache } from "../utils/cache.js"
 
 const ADMIN_ROLES = new Set(["admin", "superadmin"]);
 
@@ -492,6 +494,9 @@ export const logout = async (req, res) => {
         revokedAt: new Date(),
       },
     });
+
+    // Drop the cached auth validation so the revoked session stops passing auth at once.
+    await invalidateSessionCache(sessionId);
   }
 
   // Clear session
@@ -761,8 +766,16 @@ export const getMe = (req, res) => {
   }
 };
 
+const PUBLIC_LOGIN_INSIGHTS_CACHE_KEY = "publicLoginInsights:v1";
+const PUBLIC_LOGIN_INSIGHTS_CACHE_TTL_SECONDS = 60;
+
 export const getPublicLoginInsights = async (req, res) => {
   try {
+    const cached = await getCache(PUBLIC_LOGIN_INSIGHTS_CACHE_KEY);
+    if (cached) {
+      return res.json(cached);
+    }
+
     const now = new Date();
     const todayStart = startOfToday();
     const sevenDaysAgo = startOfDaysAgo(7);
@@ -826,7 +839,7 @@ export const getPublicLoginInsights = async (req, res) => {
       latestSessionLog,
     });
 
-    return res.json({
+    const payload = {
       metrics: {
         totalRegisteredUsers,
         activeSessions,
@@ -835,7 +848,10 @@ export const getPublicLoginInsights = async (req, res) => {
       },
       announcements,
       generatedAt: now.toISOString(),
-    });
+    };
+
+    await setCache(PUBLIC_LOGIN_INSIGHTS_CACHE_KEY, payload, PUBLIC_LOGIN_INSIGHTS_CACHE_TTL_SECONDS);
+    return res.json(payload);
   } catch (error) {
     console.error("Get Public Login Insights Error:", error);
     const nowIso = new Date().toISOString();
