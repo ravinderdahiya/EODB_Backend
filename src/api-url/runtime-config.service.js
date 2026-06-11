@@ -1,3 +1,5 @@
+import { setCache } from "../utils/cache.js";
+
 export const UPSTREAM_CONFIG_KEYS = [
   "VITE_HSAC_ORIGIN",
   "VITE_HSAC_MAP_SERVICE_PATH",
@@ -19,6 +21,9 @@ export const FRONTEND_LITERAL_KEYS = [
 
 let ensurePromise = null;
 
+const STALE_GOVERNMENT_ASSETS_URL =
+  "https://hsacggm.in/server/rest/services/Onemap_Haryana/Government_Assets/MapServer";
+
 export function getUpstreamConfigDefaults() {
   return {
     VITE_HSAC_ORIGIN: process.env.HSAC_ORIGIN || "https://hsac.org.in",
@@ -36,7 +41,7 @@ export function getUpstreamConfigDefaults() {
     VITE_HARYANA_BOUNDARY_URL:
       "https://services1.arcgis.com/qN3V93cYGMKQCOxL/arcgis/rest/services/HARYANA_BOUNDARY/FeatureServer/0",
     VITE_HSACGGM_ASSETS_URL:
-      "https://hsacggm.in/server/rest/services/Onemap_Haryana/Government_Assets/MapServer",
+      "https://hsacggm.in/server/rest/services/Onemap_Haryana/Government_Assets_Haryana/MapServer",
     VITE_NHAI_ROADS_URL:
       "https://onemapggm.gmda.gov.in/server/rest/services/NHAI_All/MapServer",
     VITE_HARYANA_ROADS_URL:
@@ -88,25 +93,57 @@ export async function ensureRuntimeConfigEntries(prisma, { force = false } = {})
 
     const existing = await prisma.apiUrl.findMany({
       where: { name: { in: names } },
-      select: { name: true },
+      select: { name: true, url: true },
     });
 
     const existingNames = new Set(existing.map((item) => item.name));
     const missingEntries = seedEntries.filter((item) => !existingNames.has(item.name));
+    const correctAssetsUrl = getUpstreamConfigDefaults().VITE_HSACGGM_ASSETS_URL;
+    const staleAssetsEntry = existing.find(
+      (item) =>
+        item.name === "VITE_HSACGGM_ASSETS_URL" &&
+        `${item.url || ""}`.trim() === STALE_GOVERNMENT_ASSETS_URL,
+    );
 
-    if (!missingEntries.length) {
-      return { created: 0, total: seedEntries.length };
-    }
-
-    await prisma.$transaction(
-      missingEntries.map((item) =>
+    const writes = [
+      ...missingEntries.map((item) =>
         prisma.apiUrl.create({
           data: item,
         }),
       ),
-    );
+    ];
 
-    return { created: missingEntries.length, total: seedEntries.length };
+    if (staleAssetsEntry) {
+      writes.push(
+        prisma.apiUrl.updateMany({
+          where: {
+            name: "VITE_HSACGGM_ASSETS_URL",
+            url: STALE_GOVERNMENT_ASSETS_URL,
+          },
+          data: { url: correctAssetsUrl },
+        }),
+      );
+    }
+
+    if (!writes.length) {
+      return { created: 0, updated: 0, total: seedEntries.length };
+    }
+
+    await prisma.$transaction(writes);
+
+    if (staleAssetsEntry) {
+      try {
+        await setCache("apiUrls_version", String(Date.now()), 0);
+      } catch {
+        // Non-fatal: stale mapserver cache expires within MAP config TTL.
+      }
+    }
+
+    return {
+      created: missingEntries.length,
+      updated: staleAssetsEntry ? 1 : 0,
+      total: seedEntries.length,
+    };
   })();
 
   return ensurePromise;
