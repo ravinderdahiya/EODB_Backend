@@ -1,17 +1,36 @@
 import { createClient } from "redis";
 
+const isEnvFlagEnabled = (key) => (
+  String(process.env[key] || "").trim().toLowerCase() === "true"
+);
+
 const REDIS_URL = process.env.REDIS_URL || null;
+const REDIS_DISABLED = isEnvFlagEnabled("REDIS_DISABLED");
 let redisClient = null;
 const localCache = new Map();
+let redisRetryAfter = 0;
+let hasLoggedCacheFallback = false;
+
+const logCacheFallback = (message) => {
+  if (hasLoggedCacheFallback) return;
+  hasLoggedCacheFallback = true;
+  console.warn(message);
+};
 
 const connectRedis = async () => {
-  if (!REDIS_URL || redisClient?.isOpen) return;
+  if (REDIS_DISABLED || !REDIS_URL || redisClient?.isOpen) return;
+  if (redisRetryAfter && Date.now() < redisRetryAfter) return;
   try {
     redisClient = createClient({ url: REDIS_URL });
-    redisClient.on("error", (err) => console.error("Redis error:", err.message));
+    redisClient.on("error", (err) => {
+      redisRetryAfter = Date.now() + 30000;
+      logCacheFallback(`Redis cache error: ${err.message}. Using in-memory cache fallback.`);
+    });
     await redisClient.connect();
+    redisRetryAfter = 0;
   } catch (err) {
-    console.error("Failed to connect Redis client:", err.message);
+    redisRetryAfter = Date.now() + 30000;
+    logCacheFallback(`Failed to connect Redis cache: ${err.message}. Using in-memory cache fallback.`);
     redisClient = null;
   }
 };
@@ -29,7 +48,7 @@ export const closeCacheConnection = async () => {
 };
 
 export const getCache = async (key) => {
-  if (REDIS_URL) {
+  if (!REDIS_DISABLED && REDIS_URL) {
     await connectRedis();
     if (!redisClient) return null;
     try {
@@ -52,7 +71,7 @@ export const getCache = async (key) => {
 };
 
 export const setCache = async (key, value, ttlSeconds = 300) => {
-  if (REDIS_URL) {
+  if (!REDIS_DISABLED && REDIS_URL) {
     await connectRedis();
     if (!redisClient) return;
     try {
@@ -72,7 +91,7 @@ export const setCache = async (key, value, ttlSeconds = 300) => {
 };
 
 export const delCache = async (key) => {
-  if (REDIS_URL) {
+  if (!REDIS_DISABLED && REDIS_URL) {
     await connectRedis();
     if (!redisClient) return;
     try {
@@ -87,7 +106,7 @@ export const delCache = async (key) => {
 };
 
 export const incrCache = async (key) => {
-  if (REDIS_URL) {
+  if (!REDIS_DISABLED && REDIS_URL) {
     await connectRedis();
     if (!redisClient) return null;
     try {

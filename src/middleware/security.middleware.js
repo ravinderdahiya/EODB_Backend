@@ -49,6 +49,7 @@ export const generalLimiter = rateLimit({
   // Skip root and high-frequency ArcGIS layer traffic that can exceed 100 requests quickly.
   skip: (req) =>
     req.path === "/" ||
+    req.path === "/health" ||
     req.method === "OPTIONS" ||
     req.path.startsWith("/mapserver/service/") ||
     req.path === "/mapserver/metadata",
