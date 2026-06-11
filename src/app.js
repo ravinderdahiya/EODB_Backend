@@ -132,6 +132,29 @@ app.use((req, res, next) => {
   next();
 });
 
+// Public probes — register before session/auth/tracking so Redis/DB hiccups
+// cannot turn a simple GET / or /health into a 500.
+const sendHealth = (req, res) => {
+  res.json({
+    status: "OK",
+    timestamp: new Date().toISOString().slice(0, 10),
+  });
+};
+
+const sendApiRoot = (req, res) => {
+  res.json({
+    status: "ok",
+    message: "EODB API running",
+    health: "/health",
+    frontend: "/eodb/",
+  });
+};
+
+app.get("/health", sendHealth);
+app.head("/health", (req, res) => res.sendStatus(200));
+app.get("/", sendApiRoot);
+app.head("/", (req, res) => res.sendStatus(200));
+
 // Security Headers
 app.use(securityHeaders);
 
@@ -208,14 +231,6 @@ mountApiRoute("/feedback", feedbackRoutes);
 mountApiRoute("/vip-users", vipUserRoutes);
 mountApiRoute("/map-link", mapLinkRoutes);
 
-// Health Check - no client data in response
-app.get("/health", (req, res) => {
-  res.json({
-    status: "OK Ravinder  test",
-    timestamp: new Date().toISOString().slice(0, 10),
-  });
-});
-
 // Centralized error handler to avoid generic 500s for known cases (like CORS)
 app.use((err, req, res, next) => {
   if (!err) return next();
@@ -224,7 +239,12 @@ app.use((err, req, res, next) => {
     return res.status(err.status || 403).json({ message: "CORS origin not allowed" });
   }
 
-  console.error("Unhandled application error:", err.message);
+  if (err.code === "ECONNREFUSED" || /redis|session/i.test(String(err.message || ""))) {
+    console.error("Session/store error (request may retry):", err.message);
+    return res.status(503).json({ message: "Service temporarily unavailable. Please retry." });
+  }
+
+  console.error("Unhandled application error:", err.message, err.stack || "");
   return res.status(err.status || 500).json({ message: "Internal server error" });
 });
 
